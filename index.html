@@ -67,6 +67,10 @@
     font-size: 13px; background: rgba(4,30,46,.55); padding: 8px 16px; border-radius: 16px; text-align: center; line-height: 1.6; white-space: nowrap;
     opacity: 0; transition: opacity .8s; pointer-events: none; }
   #hint.show { opacity: 1; }
+  #toast { position: fixed; left: 50%; top: 42%; transform: translate(-50%, -50%) scale(.9); font-size: 15px; font-weight: 600;
+    background: rgba(255,140,40,.85); padding: 8px 18px; border-radius: 20px; opacity: 0; pointer-events: none;
+    transition: opacity .25s, transform .25s; }
+  #toast.show { opacity: 1; transform: translate(-50%, -50%) scale(1); }
   #hint.hide { opacity: 0; }
 </style>
 <script type="importmap">
@@ -90,6 +94,7 @@
   </div>
   <div class="bottom"><button class="btn" id="btn-feed">エサをあげる</button></div>
 </div>
+<div id="toast">エサをあげました</div>
 <div id="hint">水の中をタップしてもエサが落ちます<br>指でなぞると見回せます</div>
 
 <div id="splash">
@@ -98,7 +103,7 @@
     <img class="fish" src="icon-512.png" alt="">
     <h1>サンゴ礁アクアリウム</h1>
     <div class="by">by Urushihara</div>
-    <div class="ver">Version 0.3.0</div>
+    <div class="ver">Version 0.3.1</div>
   </div>
   <div id="splash-status">準備しています…</div>
 </div>

@@ -8,8 +8,8 @@ export class FoodSystem {
     this.max = max;
     this.obstacles = obstacles;
     this.pellets = [];
-    const geo = new THREE.IcosahedronGeometry(0.032, 1);
-    const mat = addCaustics(new THREE.MeshStandardMaterial({ color: '#b0482a', roughness: 0.6 }), 0.5);
+    const geo = new THREE.IcosahedronGeometry(0.045, 1);
+    const mat = addCaustics(new THREE.MeshStandardMaterial({ color: '#c8602a', roughness: 0.6, emissive: new THREE.Color('#5a2008') }), 0.5);
     this.mesh = new THREE.InstancedMesh(geo, mat, max);
     this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.mesh.frustumCulled = false;
@@ -18,12 +18,13 @@ export class FoodSystem {
     this._m = new THREE.Matrix4();
   }
 
-  drop(x, z, n = 10) {
+  // y: height where the food appears (inside the visible area)
+  drop(x, y, z, n = 10) {
     for (let i = 0; i < n; i++) {
       if (this.pellets.length >= this.max) this.pellets.shift();
       this.pellets.push({
-        pos: new THREE.Vector3(x + (Math.random() - 0.5) * 0.5, WATER_TOP + 0.02, z + (Math.random() - 0.5) * 0.5),
-        alive: true, age: 0, float: 0.6 + Math.random() * 1.2, sink: 0.2 + Math.random() * 0.08,
+        pos: new THREE.Vector3(x + (Math.random() - 0.5) * 0.45, Math.min(WATER_TOP, y + (Math.random() - 0.5) * 0.25), z + (Math.random() - 0.5) * 0.4),
+        alive: true, age: 0, float: Math.random() * 0.3, sink: 0.3 + Math.random() * 0.1,
         ph: Math.random() * 6.28, landed: false, landedAt: 0,
       });
     }

@@ -12,7 +12,7 @@ import { buildReef } from './reef.js';
 import { Clownfish } from './fish.js';
 import { FoodSystem } from './food.js';
 
-export const APP = { name: 'サンゴ礁アクアリウム', version: '0.3.0' };
+export const APP = { name: 'サンゴ礁アクアリウム', version: '0.3.1' };
 
 const QUALITY = {
   low: { label: '軽量', dpr: 1, shadows: false, shadowSize: 0, bloom: false, particles: 120, coral: 0.55 },
@@ -139,15 +139,43 @@ async function init() {
     const ndc = new THREE.Vector2((e.clientX / window.innerWidth) * 2 - 1, -(e.clientY / window.innerHeight) * 2 + 1);
     ray.setFromCamera(ndc, camera);
     const hit = new THREE.Vector3();
-    if (ray.ray.intersectPlane(plane, hit)) feed(THREE.MathUtils.clamp(hit.x, -4.2, 4.2), (Math.random() - 0.5) * 1.2);
+    if (ray.ray.intersectPlane(plane, hit)) {
+      feed(THREE.MathUtils.clamp(hit.x, -4.2, 4.2), THREE.MathUtils.clamp(hit.y, 1.2, WATER_TOP - 0.2), 0);
+    }
   });
-  function feed(x, z) {
-    food.drop(x, z, 10);
+  // height of the top of the visible area at depth z (so the food is seen falling)
+  function visibleTop(x, z) {
+    const pl = new THREE.Plane(new THREE.Vector3(0, 0, 1), -z);
+    ray.setFromCamera(new THREE.Vector2(0, 0.62), camera);
+    const h = new THREE.Vector3();
+    return ray.ray.intersectPlane(pl, h) ? h.y : 4;
+  }
+  const toast = document.getElementById('toast');
+  let toastTimer = 0;
+  function feed(x, y, z) {
+    food.drop(x, y, z, 10);
+    toast.textContent = fish.hunger > 0.95 ? 'おなかいっぱいみたい' : 'エサをあげました';
+    toast.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toast.classList.remove('show'), 1400);
     hideHint();
   }
-  document.getElementById('btn-feed').addEventListener('click', () => {
-    feed(world.anemonePos.x + (Math.random() - 0.5) * 1.2, world.anemonePos.z + (Math.random() - 0.5) * 0.6);
-  });
+  // respond on touch release as well as click (iPhone), ignoring the duplicate
+  let lastFeed = 0;
+  const feedBtn = document.getElementById('btn-feed');
+  const onFeedBtn = (e) => {
+    e.preventDefault();
+    const now = performance.now();
+    if (now - lastFeed < 400) return;
+    lastFeed = now;
+    feedFromButton();
+  };
+  feedBtn.addEventListener('pointerup', onFeedBtn);
+  feedBtn.addEventListener('click', onFeedBtn);
+  function feedFromButton() {
+    const x = world.anemonePos.x + 0.4 + (Math.random() - 0.5) * 0.8, z = world.anemonePos.z + 0.3;
+    feed(x, THREE.MathUtils.clamp(visibleTop(x, z), world.anemonePos.y + 1.0, WATER_TOP - 0.2), z);
+  }
 
   // ---- quality ----
   const qBtn = document.getElementById('btn-quality');

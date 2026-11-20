@@ -330,8 +330,8 @@ export class Clownfish {
     if (food && this.hunger < 0.98) {
       this.state = 'food';
       this.target.copy(food.pos);
-      maxSpeed = 1.0;
-      if (Math.sqrt(best) < 0.11 * this.scale + 0.03) {
+      maxSpeed = 1.2;
+      if (Math.sqrt(best) < 0.2) {
         world.food.eat(food);
         this.hunger = Math.min(1, this.hunger + 0.06);
         this.bite = 1;
@@ -375,12 +375,13 @@ export class Clownfish {
       const lim = o.r + 0.3;
       if (L < lim && L > 1e-4) push.addScaledVector(d.divideScalar(L), (lim - L) * 3.0);
     }
-    const floor = sandHeight(this.pos.x, this.pos.z) + 0.3;
+    const floor = sandHeight(this.pos.x, this.pos.z) + (this.state === 'food' ? 0.1 : 0.3);
     if (this.pos.y < floor) push.y += (floor - this.pos.y) * 4;
     if (this.pos.y > 6.3) push.y -= (this.pos.y - 6.3) * 4;
     if (this.pos.x < -4.5) push.x += 2; if (this.pos.x > 4.5) push.x -= 2;
     if (this.pos.z < -2.0) push.z += 2; if (this.pos.z > 2.2) push.z -= 2;
     if (this.state === 'home') push.multiplyScalar(0.15);
+    if (this.state === 'food' && dist < 0.8) push.multiplyScalar(0.1);
     desired.add(push);
 
     this.vel.lerp(desired, Math.min(1, dt * (this.state === 'food' ? 3.2 : 1.8)));
