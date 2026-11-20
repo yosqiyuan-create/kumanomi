@@ -9,6 +9,8 @@
 <meta name="apple-mobile-web-app-title" content="サンゴ礁">
 <meta name="theme-color" content="#041a2a">
 <title>サンゴ礁アクアリウム</title>
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
 <style>
   :root { --safe-top: env(safe-area-inset-top, 0px); --safe-bottom: env(safe-area-inset-bottom, 0px); }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -36,7 +38,7 @@
     animation: rise linear infinite; }
   @keyframes rise { to { transform: translateY(-110vh); } }
   .logo { position: relative; text-align: center; padding: 0 24px; }
-  .logo .fish { width: 120px; height: 72px; margin: 0 auto 18px; display: block; filter: drop-shadow(0 6px 14px rgba(0,0,0,.35)); }
+  .logo .fish { width: 132px; height: 132px; margin: 0 auto 22px; display: block; border-radius: 30px; box-shadow: 0 10px 30px rgba(0,0,0,.4); }
   .logo h1 { margin: 0; font-size: 30px; font-weight: 700; letter-spacing: .08em; text-shadow: 0 2px 12px rgba(0,30,50,.6); }
   .logo .by { margin-top: 14px; font-size: 15px; letter-spacing: .12em; opacity: .85; font-style: italic; }
   .logo .ver { margin-top: 6px; font-size: 12px; letter-spacing: .1em; opacity: .6; }
@@ -70,8 +72,6 @@
 <script type="importmap">
 { "imports": { "three": "./lib/three.module.min.js" } }
 </script>
-
-<link rel="apple-touch-icon" href="gitup-icon.png">
 </head>
 <body>
 <canvas id="c"></canvas>
@@ -95,22 +95,10 @@
 <div id="splash">
   <div class="rays"><i></i><i></i><i></i></div>
   <div class="logo">
-    <svg class="fish" viewBox="0 0 120 72" aria-hidden="true">
-      <defs><clipPath id="body"><path d="M18 36 C30 12, 70 8, 96 26 C104 31, 106 41, 96 46 C70 64, 30 60, 18 36 Z"/></clipPath></defs>
-      <path d="M22 36 L2 18 Q8 36 2 54 Z" fill="#ff6a12" stroke="#160c08" stroke-width="2.5"/>
-      <path d="M44 16 Q60 2 78 16" fill="#ff6a12" stroke="#160c08" stroke-width="2.5"/>
-      <g clip-path="url(#body)">
-        <rect x="0" y="0" width="120" height="72" fill="#ff6a12"/>
-        <path d="M26 0 h7 v72 h-7z" fill="#fff" stroke="#160c08" stroke-width="3"/>
-        <path d="M54 0 h10 l4 36 l-4 36 h-10 l-3 -36z" fill="#fff" stroke="#160c08" stroke-width="3"/>
-        <path d="M80 0 q-6 36 0 72 h8 q-6 -36 0 -72z" fill="#fff" stroke="#160c08" stroke-width="3"/>
-      </g>
-      <path d="M18 36 C30 12, 70 8, 96 26 C104 31, 106 41, 96 46 C70 64, 30 60, 18 36 Z" fill="none" stroke="#160c08" stroke-width="2"/>
-      <circle cx="92" cy="32" r="4.2" fill="#160c08"/><circle cx="93.3" cy="30.8" r="1.3" fill="#fff"/>
-    </svg>
+    <img class="fish" src="icon-512.png" alt="">
     <h1>サンゴ礁アクアリウム</h1>
     <div class="by">by Urushihara</div>
-    <div class="ver">Version 0.1.0</div>
+    <div class="ver">Version 0.3.0</div>
   </div>
   <div id="splash-status">準備しています…</div>
 </div>

@@ -34,7 +34,7 @@ function swayExtra(amount, speed = 1.0) {
 function glowExtra() {
   const fn = (shader) => {
     shader.fragmentShader = shader.fragmentShader.replace('#include <emissivemap_fragment>',
-      '#include <emissivemap_fragment>\n#ifdef USE_INSTANCING_COLOR\n totalEmissiveRadiance *= vColor;\n#endif');
+      '#include <emissivemap_fragment>\n#if defined( USE_COLOR ) || defined( USE_INSTANCING_COLOR )\n totalEmissiveRadiance *= vColor;\n#endif');
   };
   fn.key = 'glow';
   return fn;
@@ -42,14 +42,14 @@ function glowExtra() {
 
 // ---------- Rocks ----------
 function makeRockGeometry(rng, r, sy) {
-  let g = new THREE.IcosahedronGeometry(1, 5);
+  let g = new THREE.IcosahedronGeometry(1, 4);
   g.deleteAttribute('normal');
   g.deleteAttribute('uv');
   g = mergeVertices(g);
   const seed = rng() * 100;
   const p = g.attributes.position;
   const colors = new Float32Array(p.count * 3);
-  const brown = col('#7a6c58'), grey = col('#8d877a'), pink = col('#c4708a'), purple = col('#7b5490'), green = col('#5f7438'), white = col('#d9d2c2'), c = new THREE.Color();
+  const brown = col('#8a5a6a'), grey = col('#7a6a8a'), pink = col('#e06a9a'), purple = col('#8a4ac0'), green = col('#5aa040'), white = col('#f0c060'), c = new THREE.Color();
   for (let i = 0; i < p.count; i++) {
     let x = p.getX(i), y = p.getY(i), z = p.getZ(i);
     const n1 = fbm3(x * 1.3 + seed, y * 1.3, z * 1.3, 4);
@@ -85,9 +85,9 @@ function growColony(rng, origin, normal, opts, out) {
   const up = new THREE.Vector3(0, 1, 0);
   const rec = (pos, dir, l, r, d) => {
     const end = pos.clone().addScaledVector(dir, l);
-    out.push({ a: pos, dir: dir.clone(), len: l, r, t: d / maxD, base, tip });
-    if (d >= maxD || r < 0.008) { out.push({ cap: true, a: end, r: r * 0.85, t: 1, base, tip }); return; }
-    const n = d === 0 ? 4 + Math.floor(rng() * 3) : (rng() < 0.7 ? 2 : 1);
+    out.push({ a: pos, dir: dir.clone(), len: l, r, t: d / maxD, base, tip, origin });
+    if (d >= maxD || r < 0.008) { out.push({ cap: true, a: end, r: r * 0.85, t: 1, base, tip, origin }); return; }
+    const n = d === 0 ? (opts.rootN ?? 3) + Math.floor(rng() * 3) : (rng() < (opts.split ?? 0.7) ? 2 : 1);
     for (let i = 0; i < n; i++) {
       const nd = dir.clone();
       const ax = new THREE.Vector3(rng() - 0.5, rng() - 0.5, rng() - 0.5).normalize();
@@ -102,37 +102,76 @@ function growColony(rng, origin, normal, opts, out) {
   rec(origin.clone(), start, len, rad, 0);
 }
 
-function buildBranchMesh(segs, extraMat) {
-  const cyl = new THREE.CylinderGeometry(0.8, 1, 1, 7, 1, false);
+// Sway computed from world height above the colony base, so connected segments bend together
+function swayWorldExtra(amount, speed = 1.0) {
+  const fn = (shader) => {
+    shader.uniforms.uSwayAmt = { value: amount };
+    shader.uniforms.uSwaySpd = { value: speed };
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nuniform float uSwayAmt;\nuniform float uSwaySpd;\nattribute vec3 aBase;')
+      .replace('#include <begin_vertex>', `#include <begin_vertex>
+#ifdef USE_INSTANCING
+{
+  vec3 wp = (instanceMatrix * vec4(transformed, 1.0)).xyz;
+  float h = max(wp.y - aBase.y, 0.0);
+  float ph = aBase.x*1.7 + aBase.z*1.3;
+  float t = uTime*uSwaySpd;
+  vec3 off = vec3(sin(t*1.1 + ph) + 0.4*sin(t*2.3 + ph*2.1), 0.0, cos(t*0.9 + ph*1.4) + 0.3*sin(t*1.9+ph));
+  off *= uSwayAmt * h * h;
+  transformed += inverse(mat3(instanceMatrix)) * off;
+}
+#endif`);
+  };
+  fn.key = 'swayw';
+  return fn;
+}
+
+// segs: {a, dir, len, r, t, base, tip, origin} or caps {cap, a, r, tip, origin}
+function buildBranchMesh(segs, opts = {}) {
+  const { sway = 0, swaySpeed = 0.6, roughness = 0.7, glow = 0, caus = 0.9 } = opts;
+  const cyl = new THREE.CylinderGeometry(0.8, 1, 1, 6, 1, true);
   cyl.translate(0, 0.5, 0);
-  const sph = new THREE.SphereGeometry(1, 8, 6);
+  const sph = new THREE.SphereGeometry(1, 5, 3);
   const branches = segs.filter((s) => !s.cap), caps = segs.filter((s) => s.cap);
-  const mat = addCaustics(new THREE.MeshStandardMaterial({ roughness: 0.75, metalness: 0, ...extraMat }), 0.9);
-  const mB = new THREE.InstancedMesh(cyl, mat, branches.length);
-  const mC = new THREE.InstancedMesh(sph, mat, caps.length);
+  const extras = [];
+  if (sway) extras.push(swayWorldExtra(sway, swaySpeed));
+  if (glow) extras.push(glowExtra());
+  const extra = extras.length ? Object.assign((sh) => extras.forEach((e) => e(sh)), { key: 'b' }) : null;
+  const mat = addCaustics(new THREE.MeshStandardMaterial({
+    roughness, metalness: 0, emissive: new THREE.Color(glow, glow, glow),
+  }), caus, extra);
+  const group = new THREE.Group();
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), c = new THREE.Color();
   const up = new THREE.Vector3(0, 1, 0);
-  branches.forEach((b, i) => {
+  const make = (geo, list, setter) => {
+    if (!list.length) return;
+    const m = new THREE.InstancedMesh(geo, mat, list.length);
+    const base = new Float32Array(list.length * 3);
+    list.forEach((b, i) => {
+      setter(b, i, m);
+      base[i * 3] = b.origin.x; base[i * 3 + 1] = b.origin.y; base[i * 3 + 2] = b.origin.z;
+    });
+    geo.setAttribute('aBase', new THREE.InstancedBufferAttribute(base, 3));
+    m.castShadow = false; m.receiveShadow = true;
+    group.add(m);
+  };
+  make(cyl, branches, (b, i, m) => {
     q.setFromUnitVectors(up, b.dir);
-    s.set(b.r, b.len * 1.04, b.r);
-    m4.compose(b.a, q, s);
-    mB.setMatrixAt(i, m4);
-    c.copy(b.base).lerp(b.tip, Math.pow(b.t, 1.4));
-    mB.setColorAt(i, c);
+    m4.compose(b.a, q, s.set(b.r, b.len * 1.04, b.r));
+    m.setMatrixAt(i, m4);
+    m.setColorAt(i, c.copy(b.base).lerp(b.tip, Math.pow(b.t, 1.3)));
   });
-  caps.forEach((b, i) => {
+  make(sph, caps, (b, i, m) => {
     m4.compose(b.a, q.identity(), s.set(b.r, b.r, b.r));
-    mC.setMatrixAt(i, m4);
-    mC.setColorAt(i, c.copy(b.tip).multiplyScalar(1.1));
+    m.setMatrixAt(i, m4);
+    m.setColorAt(i, c.copy(b.tip).multiplyScalar(1.08));
   });
-  for (const m of [mB, mC]) { m.castShadow = true; m.receiveShadow = true; }
-  const g = new THREE.Group(); g.add(mB, mC);
-  return g;
+  return group;
 }
 
 // ---------- Brain coral ----------
 function makeBrainCoral(rng, r) {
-  let g = new THREE.SphereGeometry(1, 96, 64, 0, Math.PI * 2, 0, Math.PI * 0.56);
+  let g = new THREE.SphereGeometry(1, 72, 40, 0, Math.PI * 2, 0, Math.PI * 0.56);
   g.deleteAttribute('normal'); g.deleteAttribute('uv');
   g = mergeVertices(g);
   const p = g.attributes.position;
@@ -268,6 +307,29 @@ function makeFingerCoral(rng, scale = 1) {
   return inst;
 }
 
+// ---------- Instanced tube clusters (torch corals, fingers) ----------
+function torchGeometry() {
+  return tubeGeometry(
+    (t) => 0.022 - 0.006 * t + 0.016 * Math.exp(-Math.pow((t - 0.93) / 0.06, 2)) - (t > 0.97 ? (t - 0.97) * 0.6 : 0),
+    (t, c) => c.setScalar(0.25 + 0.75 * THREE.MathUtils.smoothstep(t, 0.55, 0.95)), 5, 8);
+}
+
+function mushroomGeometry() {
+  // domed disc with a darker mouth and lighter rim
+  const g = new THREE.SphereGeometry(1, 12, 3, 0, Math.PI * 2, 0, Math.PI * 0.5);
+  g.scale(1, 0.25, 1);
+  g.deleteAttribute('uv');
+  const p = g.attributes.position;
+  const colr = new Float32Array(p.count * 3);
+  for (let i = 0; i < p.count; i++) {
+    const d = Math.hypot(p.getX(i), p.getZ(i));
+    const v = d < 0.12 ? 0.35 : 0.8 + 0.35 * d + 0.08 * Math.sin(Math.atan2(p.getZ(i), p.getX(i)) * 14) * d;
+    colr[i * 3] = colr[i * 3 + 1] = colr[i * 3 + 2] = v;
+  }
+  g.setAttribute('color', new THREE.BufferAttribute(colr, 3));
+  return g;
+}
+
 // ---------- Main reef builder ----------
 export function buildReef(scene, quality) {
   const rng = makeRng(42);
@@ -277,8 +339,8 @@ export function buildReef(scene, quality) {
   const rockSpecs = [
     [-3.3, 0.25, -2.3, 1.45, 0.78], [-1.1, 0.2, -2.7, 1.7, 0.85], [1.3, 0.25, -2.4, 1.5, 0.8],
     [3.4, 0.2, -2.0, 1.3, 0.72], [-2.1, 1.35, -2.6, 1.0, 0.85], [0.3, 1.55, -2.8, 0.95, 0.9],
-    [2.5, 1.15, -2.4, 0.85, 0.8], [2.3, 0.05, 0.6, 0.65, 0.6], [-3.5, 0.05, 0.4, 0.6, 0.6],
-    [-0.2, 0.05, -1.2, 0.7, 0.55],
+    [2.5, 1.15, -2.4, 0.85, 0.8], [2.4, 0.05, 0.5, 0.75, 0.6], [-3.6, 0.05, 0.3, 0.75, 0.6],
+    [-0.2, 0.05, -1.3, 0.7, 0.55], [4.3, 0.05, -0.4, 0.8, 0.7], [-4.5, 0.1, -1.0, 0.9, 0.75],
   ];
   for (const [x, y, z, r, sy] of rockSpecs) {
     const m = new THREE.Mesh(makeRockGeometry(rng, r, sy), rockMat);
@@ -290,125 +352,228 @@ export function buildReef(scene, quality) {
     obstacles.push({ c: new THREE.Vector3(x, y + r * sy * 0.35, z), r: r * 1.0 });
   }
 
-  // surface placement by raycasting down
   const ray = new THREE.Raycaster();
   const down = new THREE.Vector3(0, -1, 0);
   scene.updateMatrixWorld(true);
-  const place = (x, z) => {
+  const place = (x, z, rockOnly = false) => {
     ray.set(new THREE.Vector3(x, 20, z), down);
     const hit = ray.intersectObjects(rocks, false)[0];
-    if (hit) {
-      const n = hit.face.normal.clone().transformDirection(hit.object.matrixWorld);
-      return { p: hit.point, n };
-    }
-    return { p: new THREE.Vector3(x, sandHeight(x, z), z), n: new THREE.Vector3(0, 1, 0) };
+    if (hit) return { p: hit.point, n: hit.face.normal.clone().transformDirection(hit.object.matrixWorld), rock: true };
+    if (rockOnly) return null;
+    return { p: new THREE.Vector3(x, sandHeight(x, z), z), n: new THREE.Vector3(0, 1, 0), rock: false };
   };
 
-  // Branching corals
-  const segs = [];
-  const colonies = [
-    { x: 1.4, z: -1.9, base: '#5b3f78', tip: '#c7a8ff', len: 0.28, rad: 0.05, depth: 5 },
-    { x: -2.7, z: -1.6, base: '#5f6a2c', tip: '#e2f08a', len: 0.26, rad: 0.05, depth: 5 },
-    { x: 0.1, z: -2.0, base: '#2d4f73', tip: '#8fd6ff', len: 0.3, rad: 0.055, depth: 5 },
-    { x: 3.1, z: -1.4, base: '#7a4a3a', tip: '#ffb08a', len: 0.24, rad: 0.045, depth: 5 },
-    { x: -1.6, z: -2.0, base: '#3a6a5a', tip: '#a8ffd8', len: 0.22, rad: 0.04, depth: 5 },
-    { x: 2.2, z: -2.6, base: '#5b3f78', tip: '#e0b8ff', len: 0.22, rad: 0.04, depth: 4 },
-    { x: -0.4, z: -1.5, base: '#7a3a5a', tip: '#ff9ad0', len: 0.2, rad: 0.04, depth: 4 },
-    { x: 2.0, z: 0.2, base: '#3a5f7a', tip: '#a0e8ff', len: 0.18, rad: 0.035, depth: 4 },
-    { x: -3.4, z: 0.2, base: '#6a6a2a', tip: '#f4f07a', len: 0.18, rad: 0.035, depth: 4 },
-    { x: -1.9, z: -2.5, base: '#2d4f73', tip: '#7fc8ff', len: 0.2, rad: 0.04, depth: 4 },
-    { x: 3.0, z: -2.4, base: '#7a4a3a', tip: '#ffc09a', len: 0.2, rad: 0.04, depth: 4 },
-  ];
-  for (const c of colonies) {
-    const { p, n } = place(c.x, c.z);
-    growColony(rng, p, n, { len: c.len, rad: c.rad * 1.25, depth: c.depth, spread: 0.6, upBias: 0.3, base: col(c.base), tip: col(c.tip) }, segs);
-  }
-  scene.add(buildBranchMesh(segs, {}));
+  const anemXZ = new THREE.Vector2(-1.2, 0.1);
+  const dens = quality?.coral ?? 1;
+  const pal = {
+    purple: ['#4a2f6a', '#d9b4ff'], pink: ['#7a2e55', '#ffa6d8'], yellow: ['#6a5a1c', '#fff27a'],
+    green: ['#2f5a2a', '#a6ff6a'], blue: ['#1f3f6a', '#8fd8ff'], orange: ['#7a3a1c', '#ffb66a'],
+    teal: ['#1f5a55', '#7affe6'], red: ['#6a1f24', '#ff7a6a'], lilac: ['#5a3a6a', '#ffd0f6'],
+  };
+  const palKeys = Object.keys(pal);
+  const pick = (arr) => arr[Math.floor(rng() * arr.length)];
 
-  // Sea fans (gorgonians): planar branching, thin, swaying
-  const fanSegs = [];
-  for (const [x, z, hex] of [[-1.9, -3.4, '#c8402a'], [1.9, -3.5, '#d8702a']]) {
-    const { p } = place(x, z);
-    const planeRng = makeRng(Math.floor(x * 100 + 500));
+  // ---- candidate spots over the whole rock surface (top, sides and front) ----
+  const spots = [];
+  const cell = 0.17;
+  const grid = new Map();
+  const gkey = (p) => `${Math.floor(p.x / cell)},${Math.floor(p.y / cell)},${Math.floor(p.z / cell)}`;
+  const tooClose3 = (p, d) => {
+    const cx = Math.floor(p.x / cell), cy = Math.floor(p.y / cell), cz = Math.floor(p.z / cell);
+    for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) for (let k = -1; k <= 1; k++) {
+      const arr = grid.get(`${cx + i},${cy + j},${cz + k}`);
+      if (arr && arr.some((q) => q.distanceToSquared(p) < d * d)) return true;
+    }
+    return false;
+  };
+  const addSpot = (sp) => {
+    const k = gkey(sp.p);
+    if (!grid.has(k)) grid.set(k, []);
+    grid.get(k).push(sp.p);
+    spots.push(sp);
+  };
+  const tooClose = (x, z, d) => tooClose3(new THREE.Vector3(x, sandHeight(x, z), z), d);
+  for (const rock of rocks) {
+    const pos = rock.geometry.attributes.position, nor = rock.geometry.attributes.normal;
+    const order = [...Array(pos.count).keys()].sort(() => rng() - 0.5);
+    const nm = new THREE.Matrix3().getNormalMatrix(rock.matrixWorld);
+    for (const i of order) {
+      const p = new THREE.Vector3(pos.getX(i), pos.getY(i), pos.getZ(i)).applyMatrix4(rock.matrixWorld);
+      const n = new THREE.Vector3(nor.getX(i), nor.getY(i), nor.getZ(i)).applyMatrix3(nm).normalize();
+      if (n.y < -0.35) continue;
+      if (p.y < sandHeight(p.x, p.z) + 0.06) continue;
+      if (Math.hypot(p.x - anemXZ.x, p.z - anemXZ.y) < 0.75 && p.y < 1.0) continue;
+      if (tooClose3(p, 0.2)) continue;
+      if (rng() > dens) continue;
+      addSpot({ x: p.x, z: p.z, p, n, rock: true, wall: n.y < 0.45 });
+    }
+  }
+  // sand corals at the edges and middle ground, leaving the front-centre open
+  for (let i = 0; i < 160; i++) {
+    const x = -4.8 + rng() * 9.6, z = -1.8 + rng() * 4.6;
+    if (Math.hypot(x - anemXZ.x, z - anemXZ.y) < 1.0) continue;
+    if (z > 0.9 && Math.abs(x + 0.3) < 0.9) continue;
+    if (tooClose(x, z, 0.42)) continue;
+    const h = place(x, z);
+    if (h.rock) continue;
+    if (rng() <= dens) addSpot({ x, z, ...h });
+  }
+
+  const tan = (s, r) => {
+    const t1 = new THREE.Vector3().crossVectors(s.n, Math.abs(s.n.y) < 0.9 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0)).normalize();
+    const t2 = new THREE.Vector3().crossVectors(s.n, t1);
+    return s.p.clone().addScaledVector(t1, (rng() - 0.5) * r).addScaledVector(t2, (rng() - 0.5) * r).addScaledVector(s.n, -0.01);
+  };
+  const branchSegs = [], bushSegs = [], softSegs = [];
+  const torches = [], mushrooms = [], zoas = [];
+  const up = new THREE.Vector3(0, 1, 0);
+
+  for (const s of spots) {
+    const r = rng();
+    const colors = pal[pick(palKeys)];
+    if (!s.rock) {
+      // sand: brain, bushy, torch, soft tree
+      if (r < 0.3) s.type = 'brain'; else if (r < 0.55) s.type = 'bush'; else if (r < 0.8) s.type = 'torch'; else s.type = 'soft';
+    } else if (r < 0.22) s.type = 'branch';
+    else if (r < 0.44) s.type = 'bush';
+    else if (r < 0.56) s.type = 'torch';
+    else if (r < 0.70) s.type = 'zoa';
+    else if (r < 0.82) s.type = 'mushroom';
+    else if (r < 0.94) s.type = 'soft';
+    else if (r < 0.97) s.type = s.wall ? 'zoa' : 'table';
+    else s.type = s.wall ? 'mushroom' : 'brain';
+
+    switch (s.type) {
+      case 'branch': {
+        const size = 0.8 + rng() * 0.6;
+        growColony(rng, s.p, s.n, { len: 0.22 * size, rad: 0.055 * size, depth: 4, spread: 0.6, upBias: 0.3,
+          rootN: 2, split: 0.65, base: col(colors[0]), tip: col(colors[1]) }, branchSegs);
+        obstacles.push({ c: s.p.clone().add(new THREE.Vector3(0, 0.35 * size, 0)), r: 0.28 * size });
+        break;
+      }
+      case 'bush': { // cauliflower / Pocillopora-like
+        const size = 0.7 + rng() * 0.5;
+        growColony(rng, s.p, s.n, { len: 0.1 * size, rad: 0.045 * size, depth: 3, spread: 0.9, upBias: 0.15,
+          rootN: 4, split: 0.8, base: col(colors[0]), tip: col(colors[1]) }, bushSegs);
+        break;
+      }
+      case 'soft': { // tree soft coral, translucent and swaying
+        const size = 0.8 + rng() * 0.5;
+        const c2 = pick([pal.pink, pal.red, pal.orange, pal.lilac, pal.purple]);
+        growColony(rng, s.p, s.n, { len: 0.18 * size, rad: 0.05 * size, depth: 4, spread: 0.75, upBias: 0.25,
+          rootN: 2, split: 0.75, base: col(c2[1]).multiplyScalar(0.8), tip: col(c2[1]) }, softSegs);
+        break;
+      }
+      case 'torch': {
+        const tint = col(pick(['#6aff8a', '#ffb04a', '#5ae8ff', '#ff7ad0', '#d6ff4a']));
+        const n = 8 + Math.floor(rng() * 7);
+        for (let i = 0; i < n; i++) {
+          const a = rng() * Math.PI * 2, rr = Math.sqrt(rng()) * 0.13;
+          const dir = new THREE.Vector3(Math.cos(a) * rr * 2.5, 1, Math.sin(a) * rr * 2.5).add(s.n.clone().multiplyScalar(1.2)).normalize();
+          torches.push({ p: s.rock ? tan(s, 0.26) : s.p.clone().add(new THREE.Vector3(Math.cos(a) * rr, 0, Math.sin(a) * rr)), dir, L: 0.16 + rng() * 0.14, tint });
+        }
+        break;
+      }
+      case 'mushroom': {
+        const c = col(pick(['#3cff8a', '#ff5a3a', '#4aa0ff', '#c46aff', '#ff3ab0', '#2ae0d0']));
+        const n = 5 + Math.floor(rng() * 6);
+        for (let i = 0; i < n; i++) {
+          const h = { p: tan(s, 0.3), n: s.n };
+          if (h) mushrooms.push({ p: h.p, n: h.n, s: 0.05 + rng() * 0.07, c });
+        }
+        break;
+      }
+      case 'zoa': {
+        const c = col(pick(['#1fd04a', '#ff6a10', '#12a8ff', '#ff2f8a', '#a8f020', '#ffd21a']));
+        const n = 14 + Math.floor(rng() * 12);
+        for (let i = 0; i < n; i++) {
+          const h = { p: tan(s, 0.26), n: s.n };
+          if (h) zoas.push({ p: h.p, n: h.n, s: 0.035 + rng() * 0.03, c });
+        }
+        break;
+      }
+      case 'table': {
+        const t = makeTableCoral(rng, 0.3 + rng() * 0.3);
+        t.position.copy(s.p);
+        t.rotation.y = rng() * 6;
+        scene.add(t);
+        break;
+      }
+      case 'brain': {
+        const r0 = 0.18 + rng() * 0.2;
+        const b = makeBrainCoral(rng, r0);
+        b.position.copy(s.p).y -= 0.03;
+        b.rotation.y = rng() * 6;
+        scene.add(b);
+        obstacles.push({ c: s.p.clone().add(new THREE.Vector3(0, r0 * 0.3, 0)), r: r0 * 1.05 });
+        break;
+      }
+    }
+  }
+
+  // Sea fans behind the reef
+  for (const [x, z, hex] of [[-2.4, -3.5, '#d8402a'], [1.9, -3.6, '#e07a2a'], [-0.2, -3.7, '#c8306a'], [3.6, -3.1, '#e8b02a']]) {
+    const h = place(x, z);
+    const fr = makeRng(Math.floor(x * 100 + 500));
+    const origin = h.p.clone();
     const rec = (pos, dir, l, r, d) => {
       const end = pos.clone().addScaledVector(dir, l);
-      fanSegs.push({ a: pos, dir: dir.clone(), len: l, r, t: d / 7, base: col(hex).multiplyScalar(0.7), tip: col(hex) });
+      softSegs.push({ a: pos, dir: dir.clone(), len: l, r, t: d / 7, base: col(hex).multiplyScalar(0.7), tip: col(hex), origin });
       if (d >= 7) return;
       for (let i = 0; i < 2; i++) {
-        const ang = (i === 0 ? -1 : 1) * (0.25 + planeRng() * 0.35);
-        const nd = dir.clone().applyAxisAngle(new THREE.Vector3(0, 0, 1), ang);
+        const nd = dir.clone().applyAxisAngle(new THREE.Vector3(0, 0, 1), (i === 0 ? -1 : 1) * (0.25 + fr() * 0.35));
         nd.y += 0.25; nd.normalize();
         rec(end, nd, l * 0.82, r * 0.8, d + 1);
       }
     };
-    rec(p, new THREE.Vector3(0, 1, 0), 0.4, 0.025, 0);
-  }
-  {
-    const fan = buildBranchMesh(fanSegs, {});
-    fan.children.forEach((m) => {
-      m.material = addCaustics(new THREE.MeshStandardMaterial({ roughness: 0.8 }), 0.8, swayExtra(0.015, 0.5));
-    });
-    scene.add(fan);
+    rec(origin, new THREE.Vector3(0, 1, 0), 0.42, 0.025, 0);
   }
 
-  // Brain corals
-  for (const [x, z, r] of [[1.5, 1.0, 0.42], [-2.9, 1.1, 0.3], [3.3, -0.4, 0.28]]) {
-    const { p } = place(x, z);
-    const b = makeBrainCoral(rng, r);
-    b.position.copy(p).y -= 0.04;
-    b.rotation.y = rng() * 6;
-    scene.add(b);
-    obstacles.push({ c: p.clone().add(new THREE.Vector3(0, r * 0.3, 0)), r: r * 1.05 });
-  }
+  scene.add(buildBranchMesh(branchSegs, { roughness: 0.7, glow: 0.12 }));
+  scene.add(buildBranchMesh(bushSegs, { roughness: 0.8, glow: 0.08 }));
+  scene.add(buildBranchMesh(softSegs, { roughness: 0.6, sway: 0.05, swaySpeed: 0.5, glow: 0.18, caus: 0.6 }));
 
-  // Table corals on rock tops
-  for (const [x, z, r] of [[-0.9, -2.3, 0.6], [2.7, -2.1, 0.45]]) {
-    const { p } = place(x, z);
-    const t = makeTableCoral(rng, r);
-    t.position.copy(p);
-    t.rotation.y = rng() * 6;
-    scene.add(t);
-  }
-
-  // Finger leather corals
-  for (const [x, z, s] of [[0.8, 0.3, 1.0], [-2.3, -0.5, 0.8], [3.6, 0.6, 0.7]]) {
-    const { p } = place(x, z);
-    const f = makeFingerCoral(rng, s);
-    f.position.copy(p);
-    scene.add(f);
-  }
-
-  // Zoanthid / mushroom polyps (fluorescent) on rocks
-  {
-    const palette = ['#1fd04a', '#ff6a10', '#12a8ff', '#ff2f8a', '#a8f020'];
-    const disc = new THREE.CylinderGeometry(1, 0.55, 1, 14);
-    disc.translate(0, 0.5, 0);
-    const clusters = 12, per = 22;
-    const mat = addCaustics(new THREE.MeshStandardMaterial({ roughness: 0.5, emissive: new THREE.Color(0.22, 0.22, 0.22) }), 0.4, glowExtra());
-    const inst = new THREE.InstancedMesh(disc, mat, clusters * per);
-    const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0);
-    let k = 0;
-    const spots = [[-3.0, -1.9], [-0.6, -1.8], [1.0, -2.0], [3.6, -1.7], [-1.9, -2.3], [0.7, -2.6], [2.3, 0.4], [-3.5, 0.3], [-0.1, -1.0], [-2.4, -1.2], [2.0, -1.6], [-0.4, -1.4]];
-    spots.forEach(([sx, sz], ci) => {
-      const cc = col(palette[ci % palette.length]);
-      for (let i = 0; i < per; i++) {
-        const { p, n } = place(sx + (rng() - 0.5) * 0.45, sz + (rng() - 0.5) * 0.45);
-        q.setFromUnitVectors(up, n);
-        const s = 0.045 + rng() * 0.035;
-        m4.compose(p, q, new THREE.Vector3(s, s * 0.7, s));
-        inst.setMatrixAt(k, m4);
-        inst.setColorAt(k, cc.clone().multiplyScalar(0.75 + rng() * 0.3));
-        k++;
-      }
+  // torches
+  if (torches.length) {
+    const mat = addCaustics(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.45, emissive: new THREE.Color(0.35, 0.35, 0.35) }),
+      0.5, Object.assign((sh) => { swayExtra(0.25, 1.0)(sh); glowExtra()(sh); }, { key: 't' }));
+    const inst = new THREE.InstancedMesh(torchGeometry(), mat, torches.length);
+    const m4 = new THREE.Matrix4(), q = new THREE.Quaternion();
+    torches.forEach((t, i) => {
+      q.setFromUnitVectors(up, t.dir);
+      m4.compose(t.p, q, new THREE.Vector3(1, t.L, 1));
+      inst.setMatrixAt(i, m4);
+      inst.setColorAt(i, t.tint);
     });
     scene.add(inst);
   }
 
+  // mushrooms + zoanthids (fluorescent discs)
+  const discs = (list, geo, emis) => {
+    if (!list.length) return;
+    const mat = addCaustics(new THREE.MeshStandardMaterial({ vertexColors: !!geo.attributes.color, roughness: 0.45, emissive: new THREE.Color(emis, emis, emis) }), 0.45, glowExtra());
+    const inst = new THREE.InstancedMesh(geo, mat, list.length);
+    const m4 = new THREE.Matrix4(), q = new THREE.Quaternion();
+    list.forEach((d, i) => {
+      q.setFromUnitVectors(up, d.n);
+      m4.compose(d.p, q, new THREE.Vector3(d.s, d.s * 0.8, d.s));
+      inst.setMatrixAt(i, m4);
+      inst.setColorAt(i, d.c.clone().multiplyScalar(0.8 + rng() * 0.3));
+    });
+    scene.add(inst);
+  };
+  discs(mushrooms, mushroomGeometry(), 0.25);
+  {
+    const zg = new THREE.CylinderGeometry(1, 0.55, 1, 8);
+    zg.translate(0, 0.5, 0);
+    discs(zoas, zg, 0.25);
+  }
+
   // Anemone — home of the clownfish
-  const anemPos = place(-1.2, 0.1).p;
+  const anemPos = place(anemXZ.x, anemXZ.y).p;
   const anemone = makeAnemone(rng);
   anemone.position.copy(anemPos);
   scene.add(anemone);
 
-  return { obstacles, anemonePos: anemPos.clone().add(new THREE.Vector3(0, 0.45, 0)), rocks };
+  return { obstacles, anemonePos: anemPos.clone().add(new THREE.Vector3(0, 0.45, 0)), rocks, spotCount: spots.length };
 }

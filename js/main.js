@@ -12,12 +12,12 @@ import { buildReef } from './reef.js';
 import { Clownfish } from './fish.js';
 import { FoodSystem } from './food.js';
 
-export const APP = { name: 'サンゴ礁アクアリウム', version: '0.1.0' };
+export const APP = { name: 'サンゴ礁アクアリウム', version: '0.3.0' };
 
 const QUALITY = {
-  low: { label: '軽量', dpr: 1, shadows: false, shadowSize: 0, bloom: false, particles: 120 },
-  mid: { label: '標準', dpr: 1.5, shadows: true, shadowSize: 1024, bloom: false, particles: 240 },
-  high: { label: '高画質', dpr: 2, shadows: true, shadowSize: 2048, bloom: true, particles: 420 },
+  low: { label: '軽量', dpr: 1, shadows: false, shadowSize: 0, bloom: false, particles: 120, coral: 0.55 },
+  mid: { label: '標準', dpr: 1.5, shadows: true, shadowSize: 1024, bloom: false, particles: 240, coral: 1 },
+  high: { label: '高画質', dpr: 2, shadows: true, shadowSize: 2048, bloom: true, particles: 420, coral: 1 },
 };
 const qKey = (() => { try { return localStorage.getItem('reef.quality') || 'mid'; } catch { return 'mid'; } })();
 const Q = QUALITY[qKey] || QUALITY.mid;
@@ -77,7 +77,7 @@ async function init() {
   const world = { food, obstacles: reef.obstacles, anemonePos: reef.anemonePos };
 
   // camera + controls
-  const target = new THREE.Vector3(-0.4, 1.7, -0.3);
+  const target = new THREE.Vector3(-0.3, 1.5, -0.9);
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.target.copy(target);
   controls.enablePan = false;
@@ -96,8 +96,8 @@ async function init() {
     camera.fov = aspect < 1 ? 62 : 48;
     camera.aspect = aspect;
     camera.updateProjectionMatrix();
-    const dist = aspect < 1 ? 7.6 : 8.5;
-    camera.position.set(target.x, target.y + 0.9, target.z + dist);
+    const dist = aspect < 1 ? 7.0 : 8.0;
+    camera.position.set(target.x, target.y + 0.7, target.z + dist);
     controls.update();
   }
   placeCamera();

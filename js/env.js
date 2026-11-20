@@ -168,7 +168,7 @@ function makeSandTexture() {
 }
 
 export function makeFloor() {
-  const geo = new THREE.PlaneGeometry(50, 50, 140, 140);
+  const geo = new THREE.PlaneGeometry(50, 50, 100, 100);
   geo.rotateX(-Math.PI / 2);
   const pos = geo.attributes.position;
   for (let i = 0; i < pos.count; i++) {
