@@ -11,10 +11,10 @@ import {
 import { buildReef } from './reef.js';
 import { Clownfish } from './fish.js';
 import { FoodSystem } from './food.js';
-import { AquariumSound } from './sound.js';
+import { AquariumSound, SOUND_LABEL } from './sound.js';
 import { loadState, saveState, simulate, catchUp, dayCount, careMessages, formatAway, RATES, stageName, welcomeNewFish } from './state.js';
 
-export const APP = { name: '俺の水族館', version: '0.7.0' };
+export const APP = { name: '俺の水族館', version: '0.7.2' };
 
 const QUALITY = {
   low: { label: '軽量', dpr: 1, shadows: false, shadowSize: 0, bloom: false, particles: 120, coral: 0.55 },
@@ -201,9 +201,9 @@ async function init() {
   document.addEventListener('pointerup', unlock);
   document.addEventListener('touchend', unlock);
   const soundBtn = document.getElementById('btn-sound');
-  const soundLabel = () => { soundBtn.textContent = sound.enabled ? '音：オン' : '音：オフ'; };
+  const soundLabel = () => { soundBtn.textContent = SOUND_LABEL[sound.mode]; };
   soundLabel();
-  soundBtn.addEventListener('click', () => { sound.setEnabled(!sound.enabled); soundLabel(); });
+  soundBtn.addEventListener('click', () => { sound.nextMode(); soundLabel(); showToast(SOUND_LABEL[sound.mode]); });
 
   // ---- quality ----
   const qBtn = document.getElementById('btn-quality');

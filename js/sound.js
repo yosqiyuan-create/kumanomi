@@ -1,68 +1,81 @@
-// Aquarium sounds synthesized with the Web Audio API (no audio files needed)
-// - filter pump hum, water trickle, air-stone bubbles (ambience)
-// - effects: food plop, eating, water change
+// Underwater coral-reef soundscape, synthesized with the Web Audio API (no audio files)
+// What a diver actually hears on a reef:
+//  - snapping shrimp: dense crackling, the dominant reef sound
+//  - a low, steady ocean presence (no surface waves)
 
 const PREF = 'ore-no-suizokukan.sound';
+export const SOUND_MODES = ['sea', 'off'];
+export const SOUND_LABEL = { sea: '音：オン', off: '音：オフ' };
 
 export class AquariumSound {
   constructor() {
-    let on = true;
-    try { on = localStorage.getItem(PREF) !== 'off'; } catch {}
-    this.enabled = on;
+    let m = 'sea';
+    try { m = localStorage.getItem(PREF) || 'sea'; } catch {}
+    if (m !== 'off') m = 'sea';
+    this.mode = SOUND_MODES.includes(m) ? m : 'sea';
     this.ctx = null;
-    this.master = null;
-    this.timer = null;
   }
+
+  get enabled() { return this.mode !== 'off'; }
 
   // Must be called from a user gesture (iPhone requirement)
   start() {
     if (!this.enabled) return;
     if (this.ctx) { this.resume(); return; }
-    try {
-      // play even when the iPhone ringer switch is on silent (iOS 17+)
-      if (navigator.audioSession) navigator.audioSession.type = 'playback';
-    } catch {}
+    try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch {}
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return;
-    this.ctx = new AC();
-    this.master = this.ctx.createGain();
+    const ctx = this.ctx = new AC();
+    this.master = ctx.createGain();
     this.master.gain.value = 0;
-    const comp = this.ctx.createDynamicsCompressor();
-    comp.threshold.value = -14; comp.ratio.value = 4;
-    this.master.connect(comp).connect(this.ctx.destination);
+    const comp = ctx.createDynamicsCompressor();
+    comp.threshold.value = -12; comp.ratio.value = 4;
+    this.master.connect(comp).connect(ctx.destination);
+    // effects are heard through water: muffled
+    this.fx = ctx.createGain();
+    const fxLp = ctx.createBiquadFilter(); fxLp.type = 'lowpass'; fxLp.frequency.value = 1800;
+    this.fx.connect(fxLp).connect(this.master);
+
     this.noise = this._noiseBuffer(4);
     this._ambience();
-    this.master.gain.linearRampToValueAtTime(2.2, this.ctx.currentTime + 2.5);
-    this._startBubbles();
+    this.master.gain.linearRampToValueAtTime(1.8, ctx.currentTime + 3);
   }
 
   resume() {
     if (!this.ctx || !this.enabled) return;
     if (this.ctx.state !== 'running') this.ctx.resume();
-    if (!this.timer) this._startBubbles();
   }
 
   suspend() {
     if (!this.ctx) return;
-    clearInterval(this.timer); this.timer = null;
     this.ctx.suspend();
   }
 
-  setEnabled(on) {
-    this.enabled = on;
-    try { localStorage.setItem(PREF, on ? 'on' : 'off'); } catch {}
-    if (on) {
-      if (!this.ctx) this.start();
-      else { this.resume(); this.master.gain.setTargetAtTime(2.2, this.ctx.currentTime, 0.3); }
-    } else if (this.ctx) {
-      this.master.gain.setTargetAtTime(0, this.ctx.currentTime, 0.15);
-      setTimeout(() => { if (!this.enabled) this.suspend(); }, 800);
-    }
+  // toggle: on <-> off
+  nextMode() {
+    const i = SOUND_MODES.indexOf(this.mode);
+    this.setMode(SOUND_MODES[(i + 1) % SOUND_MODES.length]);
+    return this.mode;
   }
 
+  setMode(m) {
+    this.mode = m;
+    try { localStorage.setItem(PREF, m); } catch {}
+    if (m === 'off') {
+      if (this.ctx) {
+        this.master.gain.setTargetAtTime(0, this.ctx.currentTime, 0.15);
+        setTimeout(() => { if (this.mode === 'off') this.suspend(); }, 800);
+      }
+      return;
+    }
+    if (!this.ctx) { this.start(); return; }
+    this.resume();
+    this.master.gain.setTargetAtTime(1.8, this.ctx.currentTime, 0.3);
+  }
+
+  // ---------- building blocks ----------
   _noiseBuffer(sec) {
-    const ctx = this.ctx;
-    const len = Math.floor(ctx.sampleRate * sec);
+    const ctx = this.ctx, len = Math.floor(ctx.sampleRate * sec);
     const buf = ctx.createBuffer(2, len, ctx.sampleRate);
     for (let ch = 0; ch < 2; ch++) {
       const d = buf.getChannelData(ch);
@@ -73,147 +86,141 @@ export class AquariumSound {
 
   _noiseSource() {
     const s = this.ctx.createBufferSource();
-    s.buffer = this.noise;
-    s.loop = true;
-    s.loopStart = Math.random();
+    s.buffer = this.noise; s.loop = true;
     return s;
+  }
+
+  // Snapping shrimp: thousands of tiny sharp clicks, mostly faint, a few close and loud
+  _crackleBuffer(sec = 7) {
+    const ctx = this.ctx, sr = ctx.sampleRate, len = Math.floor(sr * sec);
+    const buf = ctx.createBuffer(2, len, sr);
+    const L = buf.getChannelData(0), R = buf.getChannelData(1);
+    const rate = 420; // clicks per second
+    const n = Math.floor(rate * sec);
+    const decay = sr * 0.00018;
+    for (let k = 0; k < n; k++) {
+      const pos = Math.floor(Math.random() * (len - 64));
+      const r = Math.random();
+      const amp = 0.04 + 0.9 * Math.pow(r, 7);      // most are distant
+      const pan = Math.random();
+      const gl = amp * Math.sqrt(1 - pan), gr = amp * Math.sqrt(pan);
+      for (let j = 0; j < 48; j++) {
+        const v = Math.exp(-j / decay) * (Math.random() * 2 - 1) * (j === 0 ? 1.6 : 1);
+        L[pos + j] += v * gl;
+        R[pos + j] += v * gr;
+      }
+    }
+    // normalise so the loudest snap never clips
+    let pk = 0;
+    for (let i = 0; i < len; i++) pk = Math.max(pk, Math.abs(L[i]), Math.abs(R[i]));
+    const k = 1 / (pk || 1);
+    for (let i = 0; i < len; i++) { L[i] *= k; R[i] *= k; }
+    return buf;
   }
 
   _ambience() {
     const ctx = this.ctx, now = ctx.currentTime;
 
-    // 1) filter pump: low rumble + faint motor hum
-    const rumble = this._noiseSource();
-    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 140; lp.Q.value = 0.7;
-    const rg = ctx.createGain(); rg.gain.value = 0.22;
-    rumble.connect(lp).connect(rg).connect(this.master);
-    rumble.start(now);
-    for (const [f, g] of [[100, 0.012], [200, 0.005], [300, 0.002]]) {
-      const o = ctx.createOscillator(); o.frequency.value = f;
-      const og = ctx.createGain(); og.gain.value = g;
-      o.connect(og).connect(this.master); o.start(now);
-    }
+    // 1) snapping shrimp crackle (high, bright, constant)
+    const cr = ctx.createBufferSource();
+    cr.buffer = this._crackleBuffer(7); cr.loop = true;
+    const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 1800; hp.Q.value = 0.5;
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 11000;
+    const cg = ctx.createGain(); cg.gain.value = 0.4;
+    // very slow density drift so it never sounds like a loop
+    const drift = ctx.createOscillator(); drift.frequency.value = 0.031;
+    const driftG = ctx.createGain(); driftG.gain.value = 0.12;
+    drift.connect(driftG).connect(cg.gain);
+    cr.connect(hp).connect(lp).connect(cg).connect(this.master);
+    cr.start(now); drift.start(now);
 
-    // 2) water trickle from the filter outlet: band-passed noise with slow wobble
-    const tr = this._noiseSource();
-    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 900; bp.Q.value = 0.9;
-    const tg = ctx.createGain(); tg.gain.value = 0.06;
-    const lfo = ctx.createOscillator(); lfo.frequency.value = 0.23;
-    const lfoG = ctx.createGain(); lfoG.gain.value = 260;
-    lfo.connect(lfoG).connect(bp.frequency);
-    const amp = ctx.createOscillator(); amp.frequency.value = 0.41;
-    const ampG = ctx.createGain(); ampG.gain.value = 0.02;
-    amp.connect(ampG).connect(tg.gain);
-    const pan = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
-    if (pan) { pan.pan.value = -0.35; tr.connect(bp).connect(tg).connect(pan).connect(this.master); }
-    else tr.connect(bp).connect(tg).connect(this.master);
-    tr.start(now); lfo.start(now); amp.start(now);
+    // 2) low ocean presence: deep, steady, no wave rhythm
+    const lo = this._noiseSource();
+    const l1 = ctx.createBiquadFilter(); l1.type = 'lowpass'; l1.frequency.value = 160; l1.Q.value = 0.5;
+    const l2 = ctx.createBiquadFilter(); l2.type = 'lowpass'; l2.frequency.value = 160; l2.Q.value = 0.5;
+    const lg = ctx.createGain(); lg.gain.value = 0.32;
+    lo.connect(l1).connect(l2).connect(lg).connect(this.master);
+    lo.start(now);
 
-    // 3) high sparkle of moving water
-    const sp = this._noiseSource();
-    const hp = ctx.createBiquadFilter(); hp.type = 'bandpass'; hp.frequency.value = 3200; hp.Q.value = 1.5;
-    const sg = ctx.createGain(); sg.gain.value = 0.012;
-    const lfo2 = ctx.createOscillator(); lfo2.frequency.value = 0.13;
-    const lfo2G = ctx.createGain(); lfo2G.gain.value = 0.008;
-    lfo2.connect(lfo2G).connect(sg.gain);
-    sp.connect(hp).connect(sg).connect(this.master);
-    sp.start(now); lfo2.start(now);
-
-    // bubbles bus (air stone on the right side)
-    this.bubbleBus = ctx.createGain();
-    this.bubbleBus.gain.value = 0.55;
-    const bbp = ctx.createBiquadFilter(); bbp.type = 'highpass'; bbp.frequency.value = 180;
-    if (ctx.createStereoPanner) {
-      const bpan = ctx.createStereoPanner(); bpan.pan.value = 0.4;
-      this.bubbleBus.connect(bbp).connect(bpan).connect(this.master);
-    } else this.bubbleBus.connect(bbp).connect(this.master);
+    // 3) faint mid "hush" of the water body
+    const mid = this._noiseSource();
+    const mb = ctx.createBiquadFilter(); mb.type = 'bandpass'; mb.frequency.value = 500; mb.Q.value = 0.6;
+    const mg = ctx.createGain(); mg.gain.value = 0.015;
+    mid.connect(mb).connect(mg).connect(this.master);
+    mid.start(now);
   }
 
-  // one small bubble "blip": a short rising sine
-  _bubble(t, vol, f0) {
+  _panner(p) {
+    if (!this.ctx.createStereoPanner) return null;
+    const s = this.ctx.createStereoPanner(); s.pan.value = p; return s;
+  }
+
+  _out(node, pan, bus) {
+    const p = this._panner(pan);
+    if (p) node.connect(p).connect(bus); else node.connect(bus);
+  }
+
+  _bubble(t, vol, f0, bus) {
     const ctx = this.ctx;
     const o = ctx.createOscillator();
-    o.type = 'sine';
-    const dur = 0.035 + Math.random() * 0.05;
+    const dur = 0.04 + Math.random() * 0.07;
     o.frequency.setValueAtTime(f0, t);
-    o.frequency.exponentialRampToValueAtTime(f0 * (1.8 + Math.random() * 1.4), t + dur);
+    o.frequency.exponentialRampToValueAtTime(f0 * (1.5 + Math.random()), t + dur);
     const g = ctx.createGain();
     g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(vol, t + 0.004);
+    g.gain.exponentialRampToValueAtTime(vol, t + 0.005);
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    o.connect(g).connect(this.bubbleBus);
+    o.connect(g).connect(bus);
     o.start(t); o.stop(t + dur + 0.02);
   }
 
-  _startBubbles() {
-    clearInterval(this.timer);
-    let next = this.ctx.currentTime + 0.1;
-    let burst = 0;
-    this.timer = setInterval(() => {
-      if (!this.ctx || this.ctx.state !== 'running') return;
-      const horizon = this.ctx.currentTime + 0.25;
-      if (next < this.ctx.currentTime) next = this.ctx.currentTime + 0.02;
-      while (next < horizon) {
-        // air stone: steady stream with little bursts
-        if (burst <= 0 && Math.random() < 0.08) burst = 4 + Math.floor(Math.random() * 8);
-        const big = Math.random() < 0.15;
-        this._bubble(next, big ? 0.09 : 0.035 + Math.random() * 0.03, big ? 220 + Math.random() * 200 : 450 + Math.random() * 700);
-        const gap = burst > 0 ? 0.015 + Math.random() * 0.03 : 0.04 + Math.random() * 0.12;
-        burst--;
-        next += gap;
-      }
-    }, 100);
-  }
-
-  // ---- effects ----
+  // ---------- effects (muffled, heard from inside the water) ----------
   plop() {
     if (!this.ctx || !this.enabled) return;
     const ctx = this.ctx;
-    for (let i = 0; i < 5; i++) {
-      const t = ctx.currentTime + i * (0.03 + Math.random() * 0.05);
+    for (let i = 0; i < 6; i++) {
+      const t = ctx.currentTime + i * (0.03 + Math.random() * 0.06);
       const o = ctx.createOscillator();
-      const f = 700 + Math.random() * 500;
+      const f = 380 + Math.random() * 300;
       o.frequency.setValueAtTime(f, t);
-      o.frequency.exponentialRampToValueAtTime(f * 0.35, t + 0.07);
+      o.frequency.exponentialRampToValueAtTime(f * 1.9, t + 0.05);
       const g = ctx.createGain();
       g.gain.setValueAtTime(0.0001, t);
-      g.gain.exponentialRampToValueAtTime(0.12, t + 0.004);
-      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.09);
-      o.connect(g).connect(this.master);
-      o.start(t); o.stop(t + 0.12);
+      g.gain.exponentialRampToValueAtTime(0.16, t + 0.004);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.07);
+      o.connect(g).connect(this.fx);
+      o.start(t); o.stop(t + 0.1);
     }
   }
 
   eat() {
     if (!this.ctx || !this.enabled) return;
     const ctx = this.ctx, t = ctx.currentTime;
-    const o = ctx.createOscillator();
-    o.frequency.setValueAtTime(1500, t);
-    o.frequency.exponentialRampToValueAtTime(600, t + 0.03);
+    const s = this._noiseSource();
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 1200; bp.Q.value = 2;
     const g = ctx.createGain();
     g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(0.05, t + 0.003);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.04);
-    o.connect(g).connect(this.master);
-    o.start(t); o.stop(t + 0.06);
+    g.gain.exponentialRampToValueAtTime(0.25, t + 0.003);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.03);
+    s.connect(bp).connect(g).connect(this.fx);
+    s.start(t, Math.random() * 3); s.stop(t + 0.05);
   }
 
   waterChange() {
     if (!this.ctx || !this.enabled) return;
     const ctx = this.ctx, t = ctx.currentTime;
     const n = this._noiseSource();
-    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.Q.value = 1.2;
-    lp.frequency.setValueAtTime(300, t);
-    lp.frequency.exponentialRampToValueAtTime(2200, t + 1.2);
-    lp.frequency.exponentialRampToValueAtTime(500, t + 3.2);
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.Q.value = 0.8;
+    lp.frequency.setValueAtTime(250, t);
+    lp.frequency.exponentialRampToValueAtTime(900, t + 1.0);
+    lp.frequency.exponentialRampToValueAtTime(300, t + 3.2);
     const g = ctx.createGain();
     g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(0.35, t + 0.4);
-    g.gain.setValueAtTime(0.35, t + 2.2);
+    g.gain.exponentialRampToValueAtTime(0.5, t + 0.5);
+    g.gain.setValueAtTime(0.5, t + 2.2);
     g.gain.exponentialRampToValueAtTime(0.0001, t + 3.4);
-    n.connect(lp).connect(g).connect(this.master);
+    n.connect(lp).connect(g).connect(this.fx);
     n.start(t); n.stop(t + 3.5);
-    // extra bubbles while pouring
-    for (let i = 0; i < 40; i++) this._bubble(t + 0.3 + Math.random() * 2.6, 0.05 + Math.random() * 0.05, 250 + Math.random() * 600);
+    for (let i = 0; i < 45; i++) this._bubble(t + 0.3 + Math.random() * 2.6, 0.06 + Math.random() * 0.06, 150 + Math.random() * 400, this.fx);
   }
 }
