@@ -470,6 +470,13 @@ export class Clownfish {
       const lim = o.r + 0.3;
       if (L < lim && L > 1e-4) push.addScaledVector(d.divideScalar(L), (lim - L) * 3.0);
     }
+    // keep a little distance from the other fish
+    if (world.fishes) for (const o of world.fishes) {
+      if (o === this || o.dead) continue;
+      const d = this.pos.clone().sub(o.pos);
+      const L = d.length(), lim = 0.22 * (this.scale + o.scale);
+      if (L < lim && L > 1e-4) push.addScaledVector(d.divideScalar(L), (lim - L) * 4);
+    }
     const floor = sandHeight(this.pos.x, this.pos.z) + (this.state === 'food' ? 0.1 : 0.3);
     if (this.pos.y < floor) push.y += (floor - this.pos.y) * 4;
     if (this.pos.y > 6.3) push.y -= (this.pos.y - 6.3) * 4;

@@ -61,6 +61,8 @@
   @keyframes blink { 50% { opacity: .45; } }
   .meter .lbl { width: 3em; }
   .name .edit { font-size: 11px; opacity: .6; }
+  .switch { display: none; margin-left: 6px; font-size: 11px; font-weight: 600; padding: 2px 7px; border-radius: 9px; background: rgba(160,225,255,.2); border: 1px solid rgba(160,225,255,.3); }
+  #btn-mate { background: rgba(200, 80, 140, .5); border-color: rgba(255,190,220,.45); }
   .days { font-size: 11px; opacity: .75; margin-top: 2px; }
   .msg { display: none; margin-top: 7px; font-size: 12px; color: #ffd36b; max-width: 170px; line-height: 1.4; }
   .btn { pointer-events: auto; appearance: none; border: 1px solid rgba(160,225,255,.25); color: #eaf8ff; font: inherit;
@@ -103,7 +105,7 @@
 <div id="hud">
   <div class="top">
     <div class="card">
-      <div class="name" style="pointer-events:auto"><span id="fish-name">クマノミ</span> <span class="edit">✎</span></div>
+      <div class="name" style="pointer-events:auto"><span id="fish-name">クマノミ</span> <span class="edit">✎</span> <span id="fish-switch" class="switch">1/2 ▶</span></div>
       <div class="days" id="day-count">飼って1日目</div>
       <div class="meter"><span class="lbl">おなか</span><div class="track"><div id="hunger-bar" class="bar"></div></div></div>
       <div class="meter"><span class="lbl">元気</span><div class="track"><div id="health-bar" class="bar"></div></div></div>
@@ -116,6 +118,7 @@
       <button class="btn" id="btn-sound">音：オン</button>
       <button class="btn" id="btn-feed">エサをあげる</button>
       <button class="btn" id="btn-water">水換え</button>
+      <button class="btn" id="btn-mate">仲間を迎える</button>
     </div>
   </div>
 </div>
@@ -138,7 +141,7 @@
     <img class="fish" src="icon-512.png" alt="">
     <h1>俺の水族館</h1>
     <div class="by">by Urushihara</div>
-    <div class="ver">Version 0.8.0</div>
+    <div class="ver">Version 0.9.0</div>
   </div>
   <div id="splash-status">準備しています…</div>
 </div>
