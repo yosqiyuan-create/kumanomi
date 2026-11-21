@@ -373,14 +373,15 @@ export class Clownfish {
     const a = Math.random() * Math.PI * 2;
     const x = THREE.MathUtils.clamp(h.x + Math.cos(a) * r, -4.2, 4.2);
     const z = THREE.MathUtils.clamp(h.z + Math.sin(a) * r * 0.7, -1.6, 1.8);
-    const y = THREE.MathUtils.clamp(h.y + Math.random() * 2.2, sandHeight(x, z) + 0.45, 5.5);
+    const weak = (this.health ?? 1) < 0.3;
+    const y = THREE.MathUtils.clamp(h.y + Math.random() * (weak ? 0.4 : 2.2), sandHeight(x, z) + 0.45, 5.5);
     this.target.set(x, y, z);
   }
 
   update(dt, world) {
     this.stateTime += dt;
-    this.hunger = Math.max(0, this.hunger - dt * 0.0006);
-    let maxSpeed = 0.45;
+    const vigor = 0.35 + 0.65 * (this.health ?? 1);
+    let maxSpeed = 0.45 * vigor;
 
     // food has priority
     let food = null, best = 1e9;
@@ -392,7 +393,7 @@ export class Clownfish {
     if (food && this.hunger < 0.98) {
       this.state = 'food';
       this.target.copy(food.pos);
-      maxSpeed = 1.2;
+      maxSpeed = 1.2 * vigor;
       if (Math.sqrt(best) < 0.2) {
         world.food.eat(food);
         this.hunger = Math.min(1, this.hunger + 0.06);

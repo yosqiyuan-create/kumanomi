@@ -8,6 +8,7 @@ export class FoodSystem {
     this.max = max;
     this.obstacles = obstacles;
     this.pellets = [];
+    this.rotted = 0; // uneaten pellets that dissolved
     const geo = new THREE.IcosahedronGeometry(0.045, 1);
     const mat = addCaustics(new THREE.MeshStandardMaterial({ color: '#c8602a', roughness: 0.6, emissive: new THREE.Color('#5a2008') }), 0.5);
     this.mesh = new THREE.InstancedMesh(geo, mat, max);
@@ -37,7 +38,7 @@ export class FoodSystem {
       if (!p.alive) continue;
       p.age += dt;
       if (p.landed) {
-        if (p.age - p.landedAt > 45) p.alive = false;
+        if (p.age - p.landedAt > 45) { p.alive = false; this.rotted++; }
         continue;
       }
       if (p.age < p.float) {

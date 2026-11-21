@@ -11,8 +11,9 @@ import {
 import { buildReef } from './reef.js';
 import { Clownfish } from './fish.js';
 import { FoodSystem } from './food.js';
+import { loadState, saveState, simulate, catchUp, dayCount, careMessages, formatAway, RATES } from './state.js';
 
-export const APP = { name: '俺の水族館', version: '0.4.0' };
+export const APP = { name: '俺の水族館', version: '0.5.0' };
 
 const QUALITY = {
   low: { label: '軽量', dpr: 1, shadows: false, shadowSize: 0, bloom: false, particles: 120, coral: 0.55 },
@@ -73,7 +74,11 @@ async function init() {
   setStatus('クマノミを呼んでいます…');
   await nextFrame();
   const food = new FoodSystem(scene, reef.obstacles);
-  const fish = new Clownfish(scene, { pos: reef.anemonePos.clone().add(new THREE.Vector3(0.6, 0.4, 0.3)) });
+  const state = loadState();
+  const awaySec = catchUp(state);
+  saveState(state);
+  const fish = new Clownfish(scene, { pos: reef.anemonePos.clone().add(new THREE.Vector3(0.6, 0.4, 0.3)), hunger: state.fish.hunger });
+  fish.health = state.fish.health;
   const world = { food, obstacles: reef.obstacles, anemonePos: reef.anemonePos };
 
   // camera + controls
@@ -152,12 +157,15 @@ async function init() {
   }
   const toast = document.getElementById('toast');
   let toastTimer = 0;
-  function feed(x, y, z) {
-    food.drop(x, y, z, 10);
-    toast.textContent = fish.hunger > 0.95 ? 'おなかいっぱいみたい' : 'エサをあげました';
+  function showToast(text, ms = 1400) {
+    toast.textContent = text;
     toast.classList.add('show');
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => toast.classList.remove('show'), 1400);
+    toastTimer = setTimeout(() => toast.classList.remove('show'), ms);
+  }
+  function feed(x, y, z) {
+    food.drop(x, y, z, 10);
+    showToast(fish.hunger > 0.95 ? 'おなかいっぱいみたい' : 'エサをあげました');
     hideHint();
   }
   // respond on touch release as well as click (iPhone), ignoring the duplicate
@@ -218,8 +226,72 @@ async function init() {
   let hintTimer = setTimeout(() => hideHint(), 9000);
   function hideHint() { hint.classList.add('hide'); clearTimeout(hintTimer); }
 
+  // ---- water change ----
+  let cleaning = 0; // amount of dirt still to remove (animated)
+  const waterBtn = document.getElementById('btn-water');
+  let lastWater = 0;
+  const onWater = (e) => {
+    e.preventDefault();
+    const now = performance.now();
+    if (now - lastWater < 600) return;
+    lastWater = now;
+    if (state.tank.dirt < 0.08) { showToast('水はきれいです'); return; }
+    cleaning = Math.min(state.tank.dirt, 0.6);
+    showToast('水換えをしました');
+    hideHint();
+  };
+  waterBtn.addEventListener('pointerup', onWater);
+  waterBtn.addEventListener('click', onWater);
+
+  // ---- water look follows how dirty the tank is ----
+  const cleanFog = FOG_COLOR.clone(), dirtyFog = new THREE.Color('#3d5a3a');
+  function applyWater(dirt) {
+    const k = THREE.MathUtils.smoothstep(dirt, 0.2, 1.0);
+    FOG_COLOR.copy(cleanFog).lerp(dirtyFog, k * 0.85);
+    scene.fog.color.copy(FOG_COLOR);
+    scene.fog.density = 0.055 + 0.08 * k;
+    shared.uCausStrength.value = 1.0 - 0.55 * k;
+  }
+
+  // ---- name ----
+  const nameEl = document.getElementById('fish-name');
+  const dayEl = document.getElementById('day-count');
+  const msgEl = document.getElementById('care-msg');
+  nameEl.textContent = state.fish.name;
+  nameEl.addEventListener('click', () => {
+    const n = window.prompt('クマノミの名前をつけてください', state.fish.name);
+    if (n && n.trim()) { state.fish.name = n.trim().slice(0, 12); nameEl.textContent = state.fish.name; saveState(state); }
+  });
+
   // ---- status ----
-  const bar = document.getElementById('hunger-bar');
+  const bars = { hunger: document.getElementById('hunger-bar'), health: document.getElementById('health-bar'), water: document.getElementById('water-bar') };
+  function setBar(el, v) {
+    el.style.width = Math.round(v * 100) + '%';
+    el.classList.toggle('low', v < 0.25);
+  }
+  function updateHud() {
+    setBar(bars.hunger, state.fish.hunger);
+    setBar(bars.health, state.fish.health);
+    setBar(bars.water, 1 - state.tank.dirt);
+    dayEl.textContent = `飼って${dayCount(state)}日目`;
+    const m = careMessages(state);
+    msgEl.textContent = m[0] || '';
+    msgEl.style.display = m.length ? 'block' : 'none';
+  }
+  updateHud();
+  applyWater(state.tank.dirt);
+
+  // ---- save / resume ----
+  function resumeFromBackground() {
+    const away = catchUp(state);
+    fish.hunger = state.fish.hunger; fish.health = state.fish.health;
+    applyWater(state.tank.dirt);
+    updateHud();
+    const a = formatAway(away);
+    if (a && away > 600) showToast(a + '！' + (careMessages(state)[0] || 'みんな元気です'), 2600);
+  }
+  setInterval(() => saveState(state), 10000);
+  window.addEventListener('pagehide', () => saveState(state));
 
   // warm up shaders, then reveal
   setStatus('もうすぐです…');
@@ -231,12 +303,18 @@ async function init() {
     document.getElementById('splash').classList.add('hide');
     document.getElementById('hud').classList.add('show');
     hint.classList.add('show');
+    const a = formatAway(awaySec);
+    if (a && awaySec > 600) setTimeout(() => showToast(a + '！' + (careMessages(state)[0] || 'みんな元気です'), 2800), 900);
   }, wait);
 
   // ---- loop ----
   const clock = new THREE.Clock();
   let running = true;
-  document.addEventListener('visibilitychange', () => { running = !document.hidden; if (running) clock.getDelta(); });
+  document.addEventListener('visibilitychange', () => {
+    running = !document.hidden;
+    if (running) { clock.getDelta(); resumeFromBackground(); } else saveState(state);
+  });
+  let hudT = 0;
   function loop() {
     requestAnimationFrame(loop);
     if (!running) return;
@@ -244,15 +322,23 @@ async function init() {
     shared.uTime.value += dt;
     const t = shared.uTime.value;
     food.update(dt, t);
+    // real-time care simulation
+    state.fish.hunger = fish.hunger;
+    simulate(state, dt);
+    if (food.rotted) { state.tank.dirt = Math.min(1, state.tank.dirt + food.rotted * RATES.dirtPerRottenPellet); food.rotted = 0; }
+    if (cleaning > 0) { const d = Math.min(cleaning, dt * 0.35); cleaning -= d; state.tank.dirt = Math.max(0, state.tank.dirt - d); }
+    fish.hunger = state.fish.hunger; fish.health = state.fish.health;
     const dbg = window.__reef && window.__reef.paused;
     if (!dbg) fish.update(dt, world);
+    state.fish.hunger = fish.hunger;
     rays.userData.update(camera);
     if (!dbg) { updateFollow(dt); controls.update(); }
-    bar.style.width = Math.round(fish.hunger * 100) + '%';
+    hudT += dt;
+    if (hudT > 0.5) { hudT = 0; updateHud(); applyWater(state.tank.dirt); }
     if (composer) composer.render(); else renderer.render(scene, camera);
   }
   loop();
-  window.__reef = { scene, camera, fish, food, controls, renderer, world };
+  window.__reef = { scene, camera, fish, food, controls, renderer, world, state };
 }
 
 init().catch((err) => {

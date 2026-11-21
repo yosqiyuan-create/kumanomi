@@ -51,16 +51,26 @@
   .card { pointer-events: auto; background: rgba(4, 30, 46, .45); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
     border: 1px solid rgba(160, 225, 255, .18); border-radius: 14px; padding: 8px 12px; }
   .name { font-size: 14px; font-weight: 600; }
-  .meter { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 12px; opacity: .9; }
+  .meter { display: flex; align-items: center; gap: 6px; margin-top: 5px; font-size: 12px; opacity: .92; }
   .track { width: 96px; height: 7px; border-radius: 4px; background: rgba(255,255,255,.18); overflow: hidden; }
-  #hunger-bar { height: 100%; width: 50%; background: linear-gradient(90deg, #ff9a3c, #ffd36b); border-radius: 4px; transition: width .4s; }
+  .bar { height: 100%; width: 50%; border-radius: 4px; transition: width .4s; }
+  #hunger-bar { background: linear-gradient(90deg, #ff9a3c, #ffd36b); }
+  #health-bar { background: linear-gradient(90deg, #ff6aa0, #ffb0d0); }
+  #water-bar { background: linear-gradient(90deg, #3ab0ff, #8fe6ff); }
+  .bar.low { background: #ff4a4a !important; animation: blink 1.2s infinite; }
+  @keyframes blink { 50% { opacity: .45; } }
+  .meter .lbl { width: 3em; }
+  .name .edit { font-size: 11px; opacity: .6; }
+  .days { font-size: 11px; opacity: .75; margin-top: 2px; }
+  .msg { display: none; margin-top: 7px; font-size: 12px; color: #ffd36b; max-width: 170px; line-height: 1.4; }
   .btn { pointer-events: auto; appearance: none; border: 1px solid rgba(160,225,255,.25); color: #eaf8ff; font: inherit;
     background: rgba(4, 30, 46, .5); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
     border-radius: 12px; padding: 8px 12px; font-size: 13px; }
   .btn:active { transform: scale(.96); }
   .right { display: flex; flex-direction: column; gap: 8px; align-items: flex-end; }
-  .bottom { position: absolute; left: 0; right: 0; bottom: calc(18px + var(--safe-bottom)); display: flex; justify-content: center; }
-  #btn-feed { font-size: 17px; font-weight: 700; padding: 13px 34px; border-radius: 30px;
+  .bottom { position: absolute; left: 0; right: 0; bottom: calc(18px + var(--safe-bottom)); display: flex; justify-content: center; gap: 12px; }
+  #btn-water { font-size: 16px; font-weight: 700; padding: 13px 22px; border-radius: 30px; background: linear-gradient(180deg, rgba(60,170,255,.9), rgba(20,110,210,.9)); border-color: rgba(190,230,255,.5); box-shadow: 0 6px 18px rgba(0,0,0,.3); }
+  #btn-feed { font-size: 16px; font-weight: 700; padding: 13px 26px; border-radius: 30px;
     background: linear-gradient(180deg, rgba(255,150,60,.9), rgba(230,100,20,.9)); border-color: rgba(255,220,180,.5);
     box-shadow: 0 6px 18px rgba(0,0,0,.3); }
   #hint { position: fixed; left: 50%; bottom: calc(90px + var(--safe-bottom)); transform: translateX(-50%);
@@ -84,15 +94,19 @@
 <div id="hud">
   <div class="top">
     <div class="card">
-      <div class="name">クマノミ</div>
-      <div class="meter">おなか <div class="track"><div id="hunger-bar"></div></div></div>
+      <div class="name" style="pointer-events:auto"><span id="fish-name">クマノミ</span> <span class="edit">✎</span></div>
+      <div class="days" id="day-count">飼って1日目</div>
+      <div class="meter"><span class="lbl">おなか</span><div class="track"><div id="hunger-bar" class="bar"></div></div></div>
+      <div class="meter"><span class="lbl">元気</span><div class="track"><div id="health-bar" class="bar"></div></div></div>
+      <div class="meter"><span class="lbl">水</span><div class="track"><div id="water-bar" class="bar"></div></div></div>
+      <div class="msg" id="care-msg"></div>
     </div>
     <div class="right">
       <button class="btn" id="btn-quality">画質：標準</button>
       <button class="btn" id="btn-camera">近くで見る</button>
     </div>
   </div>
-  <div class="bottom"><button class="btn" id="btn-feed">エサをあげる</button></div>
+  <div class="bottom"><button class="btn" id="btn-feed">エサをあげる</button><button class="btn" id="btn-water">水換え</button></div>
 </div>
 <div id="toast">エサをあげました</div>
 <div id="hint">水の中をタップしてもエサが落ちます<br>指でなぞると見回せます</div>
@@ -103,7 +117,7 @@
     <img class="fish" src="icon-512.png" alt="">
     <h1>俺の水族館</h1>
     <div class="by">by Urushihara</div>
-    <div class="ver">Version 0.4.0</div>
+    <div class="ver">Version 0.5.0</div>
   </div>
   <div id="splash-status">準備しています…</div>
 </div>
