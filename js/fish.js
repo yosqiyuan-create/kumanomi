@@ -6,17 +6,17 @@ import { sandHeight } from './noise.js';
 
 // Body profile: u (0 = tail peduncle, 1 = nose), half height, half width, centre y
 const BODY = [
-  [0.00, 0.058, 0.020, 0.000],
-  [0.08, 0.066, 0.025, 0.000],
-  [0.20, 0.104, 0.042, 0.002],
-  [0.35, 0.148, 0.060, 0.004],
-  [0.50, 0.170, 0.069, 0.006],
-  [0.62, 0.174, 0.071, 0.006],
-  [0.74, 0.160, 0.067, 0.004],
-  [0.84, 0.130, 0.058, 0.000],
-  [0.92, 0.092, 0.044, -0.006],
-  [0.97, 0.056, 0.028, -0.012],
-  [0.99, 0.030, 0.016, -0.015],
+  [0.00, 0.062, 0.020, 0.000],
+  [0.08, 0.076, 0.026, 0.000],
+  [0.20, 0.126, 0.045, 0.003],
+  [0.35, 0.172, 0.062, 0.006],
+  [0.50, 0.193, 0.072, 0.008],
+  [0.62, 0.196, 0.074, 0.008],
+  [0.74, 0.184, 0.071, 0.006],
+  [0.84, 0.158, 0.063, 0.002],
+  [0.91, 0.124, 0.052, -0.004],
+  [0.955, 0.088, 0.039, -0.010],
+  [0.985, 0.052, 0.025, -0.014],
   [1.00, 0.000, 0.000, -0.016],
 ];
 const X0 = -0.36, X1 = 0.40; // body x range (tail -> nose)
@@ -61,8 +61,8 @@ function bodyColor(u, yn, out) {
 }
 
 function buildBody() {
-  const NU = 72, NA = 32, n = 2.4;
-  const pos = [], colr = [], idx = [];
+  const NU = 90, NA = 40, n = 2.3;
+  const pos = [], colr = [], idx = [], uv2 = [];
   const c = new THREE.Color();
   for (let i = 0; i < NU; i++) {
     const u = i / (NU - 1);
@@ -74,6 +74,7 @@ function buildBody() {
       const z = hw * Math.sign(cs) * Math.pow(Math.abs(cs), ex);
       const yn = Math.sign(sn) * Math.pow(Math.abs(sn), ex);
       pos.push(ux(u), yc + hh * yn, z);
+      uv2.push(u, yn);
       bodyColor(u, yn, c);
       colr.push(c.r, c.g, c.b);
     }
@@ -85,6 +86,7 @@ function buildBody() {
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   g.setAttribute('color', new THREE.Float32BufferAttribute(colr, 3));
+  g.setAttribute('aUV', new THREE.Float32BufferAttribute(uv2, 2));
   g.setIndex(idx);
   g.computeVertexNormals();
   return g;
@@ -93,7 +95,7 @@ function buildBody() {
 // Fin as a grid between a base polyline and an outline polyline
 function buildFin(base, tip, nV = 8, opts = {}) {
   const { blackFrom = 0.78, whiteTip = false } = opts;
-  const pos = [], colr = [], idx = [];
+  const pos = [], colr = [], idx = [], fin = [];
   const c = new THREE.Color();
   const nS = base.length;
   for (let i = 0; i < nS; i++) {
@@ -101,10 +103,9 @@ function buildFin(base, tip, nV = 8, opts = {}) {
       const t = v / nV;
       const p = base[i].clone().lerp(tip[i], t);
       pos.push(p.x, p.y, p.z);
+      fin.push(i / (nS - 1), t);
       c.copy(C.orange);
-      const ray = 0.5 + 0.5 * Math.sin(i * 2.2);
-      c.multiplyScalar(0.92 + 0.12 * ray);
-      if (t > blackFrom) c.lerp(C.black, Math.min(1, (t - blackFrom) / 0.07));
+            if (t > blackFrom) c.lerp(C.black, Math.min(1, (t - blackFrom) / 0.07));
       if (whiteTip && t > 0.97) c.lerp(C.white, 0.6);
       colr.push(c.r, c.g, c.b);
     }
@@ -116,6 +117,7 @@ function buildFin(base, tip, nV = 8, opts = {}) {
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   g.setAttribute('color', new THREE.Float32BufferAttribute(colr, 3));
+  g.setAttribute('aFin', new THREE.Float32BufferAttribute(fin, 2));
   g.setIndex(idx);
   g.computeVertexNormals();
   return g;
@@ -132,7 +134,7 @@ function dorsalFin() {
     const { hh, yc } = profile(u);
     const y0 = yc + hh * 0.93;
     let h;
-    if (s < 0.55) h = 0.15 * Math.pow(Math.sin(Math.PI * Math.min(1, s / 0.55 * 0.92 + 0.04)), 0.75);
+    if (s < 0.55) h = 0.125 * Math.pow(Math.sin(Math.PI * Math.min(1, s / 0.55 * 0.92 + 0.04)), 0.75);
     else {
       const k = (s - 0.55) / 0.45;
       h = 0.055 + 0.03 * Math.abs(Math.sin(k * Math.PI * 4.5)) - 0.05 * k * k;
@@ -167,7 +169,7 @@ function caudalFin() {
   for (let i = 0; i < N; i++) {
     const s = i / (N - 1);
     const a = (s - 0.5) * 1.55;
-    const L = 0.15 + 0.04 * Math.cos((s - 0.5) * Math.PI);
+    const L = 0.13 + 0.035 * Math.cos((s - 0.5) * Math.PI);
     const by = (s - 0.5) * 2 * hh * 0.9;
     base.push(V(X0 + 0.015, by));
     tip.push(V(X0 - L * Math.cos(a * 0.7), by + L * Math.sin(a)));
@@ -206,7 +208,7 @@ function pectoralGeometry() {
 }
 
 function eyeGeometry(side) {
-  const g = new THREE.SphereGeometry(0.03, 20, 14);
+  const g = new THREE.SphereGeometry(0.034, 24, 16);
   g.deleteAttribute('uv');
   const p = g.attributes.position;
   const colr = new Float32Array(p.count * 3);
@@ -216,8 +218,8 @@ function eyeGeometry(side) {
   for (let i = 0; i < p.count; i++) {
     d.set(p.getX(i), p.getY(i), p.getZ(i)).normalize();
     const k = d.dot(out);
-    if (k > 0.78) c.copy(C.black);
-    else if (k > 0.5) c.copy(C.iris).lerp(C.black, k > 0.72 ? 0.6 : 0);
+    if (k > 0.8) c.copy(C.black);
+    else if (k > 0.52) c.copy(C.iris).lerp(C.black, THREE.MathUtils.smoothstep(k, 0.72, 0.8));
     else c.copy(C.orange);
     colr[i * 3] = c.r; colr[i * 3 + 1] = c.g; colr[i * 3 + 2] = c.b;
   }
@@ -228,61 +230,121 @@ function eyeGeometry(side) {
   return g;
 }
 
-function swimExtra(uniforms) {
+const BEND_GLSL = `
+  float Lb = clamp((0.40 - transformed.x) / 0.96, 0.0, 1.25);
+  float waveB = sin(uSwimT - transformed.x * 7.5);
+  transformed.z += uAmp * (0.03 + Lb * Lb) * waveB + uTurn * Lb * Lb;
+`;
+
+// mode: 'body' | 'fin' | 'eye' | 'pec'
+function fishExtra(uniforms, mode) {
   const fn = (shader) => {
     Object.assign(shader.uniforms, uniforms);
-    shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nuniform float uSwimT;\nuniform float uAmp;\nuniform float uTurn;\nvarying vec3 vLocal;')
-      .replace('#include <begin_vertex>', `#include <begin_vertex>
-{
-  float L = clamp((0.40 - transformed.x) / 0.96, 0.0, 1.25);
-  float wave = sin(uSwimT - transformed.x * 7.5);
-  transformed.z += uAmp * (0.03 + L * L) * wave + uTurn * L * L;
-  vLocal = position;
-}`);
-    shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', '#include <common>\nvarying vec3 vLocal;')
-      .replace('#include <color_fragment>', `#include <color_fragment>
-{
-  float sc = sin(vLocal.x*190.0 + sin(vLocal.y*190.0)*1.4) * sin(vLocal.y*190.0 + vLocal.x*60.0);
-  diffuseColor.rgb *= 0.96 + 0.05*sc;
-}`);
+    const isFin = mode === 'fin' || mode === 'pec';
+    let vdecl = '#include <common>\nuniform float uSwimT;\nuniform float uAmp;\nuniform float uTurn;\nvarying vec3 vLocal;\n';
+    if (mode === 'body') vdecl += 'attribute vec2 aUV;\nvarying vec2 vUV2;\n';
+    if (isFin) vdecl += 'attribute vec2 aFin;\nvarying vec2 vFin;\n';
+    let vbody = '#include <begin_vertex>\nvLocal = position;\n';
+    if (mode === 'body') vbody += 'vUV2 = aUV;\n';
+    if (isFin) vbody += 'vFin = aFin;\ntransformed.z += sin(uSwimT * 1.7 + aFin.x * 11.0) * 0.007 * aFin.y;\n';
+    if (mode !== 'pec') vbody += BEND_GLSL;
+    shader.vertexShader = shader.vertexShader.replace('#include <common>', vdecl).replace('#include <begin_vertex>', vbody);
+
+    let fdecl = '#include <common>\nvarying vec3 vLocal;\n';
+    let fbody = '#include <color_fragment>\n';
+    if (mode === 'body') {
+      fdecl += `varying vec2 vUV2;
+uniform vec3 cOrange; uniform vec3 cDeep; uniform vec3 cBelly; uniform vec3 cWhite; uniform vec3 cBlack;
+float bandMask(float u, float c, float w, float aa){ return 1.0 - smoothstep(-aa, aa, abs(u - c) - w); }
+`;
+      fbody += `{
+  float u = vUV2.x, yn = clamp(vUV2.y, -1.0, 1.0);
+  float aa = max(fwidth(u) * 1.2, 0.0015);
+  vec3 col = cOrange;
+  col = mix(col, cDeep, smoothstep(0.35, 1.0, yn) * 0.75);
+  col = mix(col, cBelly, smoothstep(-0.25, -1.0, yn) * 0.7);
+  float hc = 0.752 + 0.032 * yn * yn;              // head band, bowed toward the tail
+  float mc = 0.462 + 0.05 * exp(-yn * yn * 3.5); // mid band with rounded forward bulge
+  float tc = 0.090;                                 // tail band
+  float edge = 0.011;
+  float w1 = 0.048, w2 = 0.052 + 0.008 * exp(-yn * yn * 3.0), w3 = 0.030;
+  float blk = max(max(bandMask(u, hc, w1 + edge, aa), bandMask(u, mc, w2 + edge, aa)), bandMask(u, tc, w3 + edge, aa));
+  float wht = max(max(bandMask(u, hc, w1, aa), bandMask(u, mc, w2, aa)), bandMask(u, tc, w3, aa));
+  col = mix(col, cBlack, blk);
+  col = mix(col, cWhite, wht);
+  // mouth line and darker lips
+  float mouth = smoothstep(0.955, 0.985, u) * (1.0 - smoothstep(0.05, 0.12, abs(yn + 0.28)));
+  col = mix(col, col * 0.35, mouth);
+  // fine scales
+  float sc = sin(vLocal.x * 210.0 + sin(vLocal.y * 210.0) * 1.3) * sin(vLocal.y * 210.0 + vLocal.x * 70.0);
+  col *= 0.965 + 0.045 * sc;
+  diffuseColor.rgb = col;
+}
+`;
+    }
+    if (isFin) {
+      fdecl += 'varying vec2 vFin;\n';
+      fbody += `{
+  float rays = 0.5 + 0.5 * sin(vFin.x * 70.0);
+  diffuseColor.rgb *= mix(1.0, 0.82 + 0.18 * rays, smoothstep(0.1, 0.6, vFin.y));
+  float a = mix(0.96, 0.55, smoothstep(0.15, 0.78, vFin.y));
+  a = mix(a, 0.92, smoothstep(0.74, 0.86, vFin.y));
+  diffuseColor.a *= a;
+}
+`;
+    }
+    shader.fragmentShader = shader.fragmentShader.replace('#include <common>', fdecl).replace('#include <color_fragment>', fbody);
   };
-  fn.key = 'swim';
+  fn.key = 'fish-' + mode;
   return fn;
 }
 
 export class Clownfish {
   constructor(scene, opts = {}) {
-    this.scale = opts.scale ?? 0.85;
-    this.uniforms = { uSwimT: { value: 0 }, uAmp: { value: 0.03 }, uTurn: { value: 0 } };
-    const parts = [
-      buildBody(), dorsalFin(), analFin(), caudalFin(), pelvicFin(1), pelvicFin(-1), eyeGeometry(1), eyeGeometry(-1),
-    ];
-    const geo = mergeGeometries(parts, false);
-    const mat = addCaustics(new THREE.MeshPhysicalMaterial({
-      vertexColors: true, roughness: 0.35, metalness: 0, clearcoat: 0.7, clearcoatRoughness: 0.2,
-      sheen: 0.5, sheenColor: new THREE.Color('#ffd2a8'), sheenRoughness: 0.4, side: THREE.DoubleSide,
-    }), 0.45, swimExtra(this.uniforms));
-    this.body = new THREE.Mesh(geo, mat);
+    this.scale = opts.scale ?? 1.0;
+    this.uniforms = {
+      uSwimT: { value: 0 }, uAmp: { value: 0.03 }, uTurn: { value: 0 },
+      cOrange: { value: new THREE.Color('#ff6a0a') }, cDeep: { value: new THREE.Color('#e04800') },
+      cBelly: { value: new THREE.Color('#ff9a40') }, cWhite: { value: new THREE.Color('#fbfaf6') },
+      cBlack: { value: new THREE.Color('#110b08') },
+    };
+    const bodyMat = addCaustics(new THREE.MeshPhysicalMaterial({
+      vertexColors: true, roughness: 0.32, metalness: 0, clearcoat: 0.8, clearcoatRoughness: 0.18,
+      sheen: 0.45, sheenColor: new THREE.Color('#ffd2a8'), sheenRoughness: 0.4,
+    }), 0.45, fishExtra(this.uniforms, 'body'));
+    this.body = new THREE.Mesh(buildBody(), bodyMat);
     this.body.castShadow = true;
 
+    const finGeo = mergeGeometries([dorsalFin(), analFin(), caudalFin(), pelvicFin(1), pelvicFin(-1)], false);
     const finMat = addCaustics(new THREE.MeshPhysicalMaterial({
-      vertexColors: true, roughness: 0.4, clearcoat: 0.4, side: THREE.DoubleSide, transparent: true, opacity: 0.92,
-    }), 0.4);
+      vertexColors: true, roughness: 0.45, clearcoat: 0.3, side: THREE.DoubleSide, transparent: true, depthWrite: false,
+    }), 0.35, fishExtra(this.uniforms, 'fin'));
+    this.fins = new THREE.Mesh(finGeo, finMat);
+    this.fins.renderOrder = 2;
+    this.fins.castShadow = true;
+
+    const eyeMat = addCaustics(new THREE.MeshPhysicalMaterial({
+      vertexColors: true, roughness: 0.08, clearcoat: 1.0, clearcoatRoughness: 0.03,
+    }), 0.2, fishExtra(this.uniforms, 'eye'));
+    this.eyes = new THREE.Mesh(mergeGeometries([eyeGeometry(1), eyeGeometry(-1)], false), eyeMat);
+
+    const pecMat = addCaustics(new THREE.MeshPhysicalMaterial({
+      vertexColors: true, roughness: 0.45, clearcoat: 0.3, side: THREE.DoubleSide, transparent: true, depthWrite: false,
+    }), 0.35, fishExtra(this.uniforms, 'pec'));
     const pg = pectoralGeometry();
     this.pecs = [1, -1].map((side) => {
-      const m = new THREE.Mesh(pg, finMat);
-      const u = 0.79;
+      const m = new THREE.Mesh(pg, pecMat);
+      const u = 0.7;
       const { hw, yc } = profile(u);
-      m.position.set(ux(u), yc - 0.02, side * hw * 1.02);
+      m.position.set(ux(u), yc - 0.03, side * hw * 1.02);
       m.userData.side = side;
+      m.renderOrder = 3;
       return m;
     });
 
     this.model = new THREE.Group();
     this.model.rotation.y = -Math.PI / 2; // build axis +x -> object +z
-    this.model.add(this.body, ...this.pecs);
+    this.model.add(this.body, this.fins, this.eyes, ...this.pecs);
     this.object = new THREE.Group();
     this.object.add(this.model);
     this.object.scale.setScalar(this.scale);

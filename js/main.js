@@ -12,7 +12,7 @@ import { buildReef } from './reef.js';
 import { Clownfish } from './fish.js';
 import { FoodSystem } from './food.js';
 
-export const APP = { name: 'サンゴ礁アクアリウム', version: '0.3.1' };
+export const APP = { name: '俺の水族館', version: '0.4.0' };
 
 const QUALITY = {
   low: { label: '軽量', dpr: 1, shadows: false, shadowSize: 0, bloom: false, particles: 120, coral: 0.55 },
@@ -186,7 +186,32 @@ async function init() {
     try { localStorage.setItem('reef.quality', next); } catch {}
     location.reload();
   });
-  document.getElementById('btn-camera').addEventListener('click', () => placeCamera());
+  // ---- close-up (follow the fish) ----
+  let follow = false;
+  const camBtn = document.getElementById('btn-camera');
+  const lim = { minD: controls.minDistance, maxD: controls.maxDistance, minA: controls.minAzimuthAngle, maxA: controls.maxAzimuthAngle, minP: controls.minPolarAngle, maxP: controls.maxPolarAngle };
+  function setFollow(on) {
+    follow = on;
+    camBtn.textContent = on ? '全体を見る' : '近くで見る';
+    if (on) {
+      Object.assign(controls, { minDistance: 0.7, maxDistance: 4, minAzimuthAngle: -Infinity, maxAzimuthAngle: Infinity, minPolarAngle: 0.35, maxPolarAngle: 2.5 });
+      const dir = camera.position.clone().sub(controls.target).normalize();
+      controls.target.copy(fish.object.position);
+      camera.position.copy(fish.object.position).addScaledVector(dir, 1.7);
+    } else {
+      Object.assign(controls, { minDistance: lim.minD, maxDistance: lim.maxD, minAzimuthAngle: lim.minA, maxAzimuthAngle: lim.maxA, minPolarAngle: lim.minP, maxPolarAngle: lim.maxP });
+      placeCamera();
+    }
+    controls.update();
+  }
+  camBtn.addEventListener('click', () => setFollow(!follow));
+  const _fd = new THREE.Vector3();
+  function updateFollow(dt) {
+    if (!follow) return;
+    _fd.copy(fish.object.position).sub(controls.target).multiplyScalar(Math.min(1, dt * 3));
+    controls.target.add(_fd);
+    camera.position.add(_fd);
+  }
 
   // ---- hint ----
   const hint = document.getElementById('hint');
@@ -219,9 +244,10 @@ async function init() {
     shared.uTime.value += dt;
     const t = shared.uTime.value;
     food.update(dt, t);
-    fish.update(dt, world);
+    const dbg = window.__reef && window.__reef.paused;
+    if (!dbg) fish.update(dt, world);
     rays.userData.update(camera);
-    controls.update();
+    if (!dbg) { updateFollow(dt); controls.update(); }
     bar.style.width = Math.round(fish.hunger * 100) + '%';
     if (composer) composer.render(); else renderer.render(scene, camera);
   }
