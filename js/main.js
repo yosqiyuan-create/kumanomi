@@ -14,7 +14,7 @@ import { FoodSystem } from './food.js';
 import { AquariumSound, SOUND_LABEL } from './sound.js';
 import { loadState, saveState, simulate, catchUp, dayCount, careMessages, formatAway, RATES, stageName, welcomeNewFish } from './state.js';
 
-export const APP = { name: '俺の水族館', version: '0.7.3' };
+export const APP = { name: '俺の水族館', version: '0.8.0' };
 
 const QUALITY = {
   low: { label: '軽量', dpr: 1, shadows: false, shadowSize: 0, bloom: false, particles: 120, coral: 0.55 },
@@ -173,7 +173,7 @@ async function init() {
   function feed(x, y, z) {
     if (!state.fish.alive) return;
     food.drop(x, y, z, 10);
-    sound.plop();
+    sound.plop({ x, y, z });
     showToast(fish.hunger > 0.95 ? 'おなかいっぱいみたい' : 'エサをあげました');
     hideHint();
   }
@@ -196,7 +196,7 @@ async function init() {
 
   // ---- sound ----
   const sound = new AquariumSound();
-  food.onEat = () => sound.eat();
+  food.onEat = (pos) => sound.eat(pos);
   const unlock = () => sound.start();
   document.addEventListener('pointerup', unlock);
   document.addEventListener('touchend', unlock);
@@ -392,6 +392,7 @@ async function init() {
     if (!dbg) fish.update(dt, world);
     state.fish.hunger = fish.hunger;
     rays.userData.update(camera);
+    sound.updateListener(camera);
     if (!dbg) { updateFollow(dt); controls.update(); }
     hudT += dt;
     if (hudT > 0.5) { hudT = 0; updateHud(); applyWater(state.tank.dirt); fish.setGrowth(state.fish.growth); }

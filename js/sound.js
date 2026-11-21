@@ -135,21 +135,30 @@ export class AquariumSound {
       return s;
     };
 
-    // 1) main flow: muffled body of moving water
-    const a = src(0);
-    const aLp = ctx.createBiquadFilter(); aLp.type = 'lowpass'; aLp.frequency.value = 520; aLp.Q.value = 0.4;
-    const aLp2 = ctx.createBiquadFilter(); aLp2.type = 'lowpass'; aLp2.frequency.value = 900; aLp2.Q.value = 0.3;
-    const aG = ctx.createGain(); aG.gain.value = 0.1;
-    this._swell(aG.gain, 0.04, [0.047, 0.071, 0.113]);
-    a.connect(aLp).connect(aLp2).connect(aG).connect(this.master);
-
-    // 2) current brushing past: a soft band that drifts up and down in pitch
-    const b = src(3.1);
-    const bBp = ctx.createBiquadFilter(); bBp.type = 'bandpass'; bBp.frequency.value = 380; bBp.Q.value = 1.1;
-    this._swell(bBp.frequency, 160, [0.037, 0.059, 0.089]);
-    const bG = ctx.createGain(); bG.gain.value = 0.06;
-    this._swell(bG.gain, 0.038, [0.053, 0.097, 0.031]);
-    b.connect(bBp).connect(bG).connect(this.master);
+    // 1) flowing water placed all around the listener (3D, HRTF for headphones)
+    //    each spot swells on its own, so currents seem to pass from different directions
+    const spots = [
+      { p: [-7, 2.5, 1], f: [0.047, 0.071], band: false },
+      { p: [7, 3.0, 0], f: [0.053, 0.083], band: false },
+      { p: [0, 3.5, -8], f: [0.041, 0.097], band: true },
+      { p: [-4, 6.5, -3], f: [0.059, 0.031], band: true },
+      { p: [5, 1.0, 6], f: [0.067, 0.037], band: true },
+    ];
+    spots.forEach((sp, i) => {
+      const s = src(i * 1.73);
+      const f1 = ctx.createBiquadFilter();
+      if (sp.band) {
+        f1.type = 'bandpass'; f1.frequency.value = 330 + i * 40; f1.Q.value = 1.0;
+        this._swell(f1.frequency, 140, [sp.f[1] * 0.8, sp.f[0] * 1.3]);
+      } else {
+        f1.type = 'lowpass'; f1.frequency.value = 560; f1.Q.value = 0.4;
+      }
+      const f2 = ctx.createBiquadFilter(); f2.type = 'lowpass'; f2.frequency.value = 1000; f2.Q.value = 0.3;
+      const g = ctx.createGain(); g.gain.value = sp.band ? 0.1 : 0.12;
+      this._swell(g.gain, sp.band ? 0.08 : 0.09, sp.f);
+      const pan = this._panner3D(sp.p, 6, 0.5);
+      s.connect(f1).connect(f2).connect(g).connect(pan).connect(this.master);
+    });
 
     // 3) deep pressure of the open water
     const c = src(6.3);
@@ -157,6 +166,45 @@ export class AquariumSound {
     const cG = ctx.createGain(); cG.gain.value = 0.17;
     this._swell(cG.gain, 0.045, [0.029, 0.061]);
     c.connect(cLp).connect(cG).connect(this.master);
+  }
+
+  _panner3D(pos, ref = 3, roll = 0.8) {
+    const p = this.ctx.createPanner();
+    p.panningModel = 'HRTF';
+    p.distanceModel = 'inverse';
+    p.refDistance = ref;
+    p.rolloffFactor = roll;
+    p.maxDistance = 60;
+    if (p.positionX) { p.positionX.value = pos[0]; p.positionY.value = pos[1]; p.positionZ.value = pos[2]; }
+    else p.setPosition(pos[0], pos[1], pos[2]);
+    return p;
+  }
+
+  // Follow the camera: where you look decides where sounds come from
+  updateListener(camera) {
+    if (!this.ctx || this.ctx.state !== 'running') return;
+    const L = this.ctx.listener;
+    const p = camera.position;
+    const e = camera.matrixWorld.elements;
+    const fx = -e[8], fy = -e[9], fz = -e[10];   // camera forward
+    const ux = e[4], uy = e[5], uz = e[6];       // camera up
+    if (L.positionX) {
+      const t = this.ctx.currentTime, k = 0.05;
+      L.positionX.setTargetAtTime(p.x, t, k); L.positionY.setTargetAtTime(p.y, t, k); L.positionZ.setTargetAtTime(p.z, t, k);
+      L.forwardX.setTargetAtTime(fx, t, k); L.forwardY.setTargetAtTime(fy, t, k); L.forwardZ.setTargetAtTime(fz, t, k);
+      L.upX.setTargetAtTime(ux, t, k); L.upY.setTargetAtTime(uy, t, k); L.upZ.setTargetAtTime(uz, t, k);
+    } else {
+      L.setPosition(p.x, p.y, p.z);
+      L.setOrientation(fx, fy, fz, ux, uy, uz);
+    }
+  }
+
+  // output for an effect at a 3D position (falls back to plain output)
+  _fxAt(pos) {
+    if (!pos) return this.fx;
+    const pan = this._panner3D([pos.x, pos.y, pos.z], 2.5, 1.0);
+    pan.connect(this.fx);
+    return pan;
   }
 
   _panner(p) {
@@ -184,9 +232,10 @@ export class AquariumSound {
   }
 
   // ---------- effects (muffled, heard from inside the water) ----------
-  plop() {
+  plop(pos) {
     if (!this.ctx || !this.enabled) return;
     const ctx = this.ctx;
+    const out = this._fxAt(pos);
     for (let i = 0; i < 6; i++) {
       const t = ctx.currentTime + i * (0.03 + Math.random() * 0.06);
       const o = ctx.createOscillator();
@@ -197,21 +246,22 @@ export class AquariumSound {
       g.gain.setValueAtTime(0.0001, t);
       g.gain.exponentialRampToValueAtTime(0.16, t + 0.004);
       g.gain.exponentialRampToValueAtTime(0.0001, t + 0.07);
-      o.connect(g).connect(this.fx);
+      o.connect(g).connect(out);
       o.start(t); o.stop(t + 0.1);
     }
   }
 
-  eat() {
+  eat(pos) {
     if (!this.ctx || !this.enabled) return;
     const ctx = this.ctx, t = ctx.currentTime;
+    const out = this._fxAt(pos);
     const s = this._noiseSource();
     const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 1200; bp.Q.value = 2;
     const g = ctx.createGain();
     g.gain.setValueAtTime(0.0001, t);
     g.gain.exponentialRampToValueAtTime(0.25, t + 0.003);
     g.gain.exponentialRampToValueAtTime(0.0001, t + 0.03);
-    s.connect(bp).connect(g).connect(this.fx);
+    s.connect(bp).connect(g).connect(out);
     s.start(t, Math.random() * 3); s.stop(t + 0.05);
   }
 

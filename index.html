@@ -68,12 +68,10 @@
     border-radius: 12px; padding: 8px 12px; font-size: 13px; }
   .btn:active { transform: scale(.96); }
   .right { display: flex; flex-direction: column; gap: 8px; align-items: flex-end; }
-  .bottom { position: absolute; left: 0; right: 0; bottom: calc(18px + var(--safe-bottom)); display: flex; justify-content: center; gap: 12px; }
-  #btn-water { font-size: 16px; font-weight: 700; padding: 13px 22px; border-radius: 30px; background: linear-gradient(180deg, rgba(60,170,255,.9), rgba(20,110,210,.9)); border-color: rgba(190,230,255,.5); box-shadow: 0 6px 18px rgba(0,0,0,.3); }
-  #btn-feed { font-size: 16px; font-weight: 700; padding: 13px 26px; border-radius: 30px;
-    background: linear-gradient(180deg, rgba(255,150,60,.9), rgba(230,100,20,.9)); border-color: rgba(255,220,180,.5);
-    box-shadow: 0 6px 18px rgba(0,0,0,.3); }
-  #hint { position: fixed; left: 50%; bottom: calc(90px + var(--safe-bottom)); transform: translateX(-50%);
+  .bottom { position: absolute; left: 0; right: 0; bottom: calc(18px + var(--safe-bottom)); display: flex; justify-content: center; gap: 10px; }
+  #btn-water { background: rgba(20, 110, 210, .55); border-color: rgba(160,215,255,.45); }
+  #btn-feed { background: rgba(230, 110, 30, .6); border-color: rgba(255,200,150,.45); }
+  #hint { position: fixed; left: 50%; bottom: calc(24px + var(--safe-bottom)); transform: translateX(-50%);
     font-size: 13px; background: rgba(4,30,46,.55); padding: 8px 16px; border-radius: 16px; text-align: center; line-height: 1.6; white-space: nowrap;
     opacity: 0; transition: opacity .8s; pointer-events: none; }
   #hint.show { opacity: 1; }
@@ -116,9 +114,10 @@
       <button class="btn" id="btn-quality">画質：標準</button>
       <button class="btn" id="btn-camera">近くで見る</button>
       <button class="btn" id="btn-sound">音：オン</button>
+      <button class="btn" id="btn-feed">エサをあげる</button>
+      <button class="btn" id="btn-water">水換え</button>
     </div>
   </div>
-  <div class="bottom"><button class="btn" id="btn-feed">エサをあげる</button><button class="btn" id="btn-water">水換え</button></div>
 </div>
 <div id="death">
   <div class="panel">
@@ -139,7 +138,7 @@
     <img class="fish" src="icon-512.png" alt="">
     <h1>俺の水族館</h1>
     <div class="by">by Urushihara</div>
-    <div class="ver">Version 0.7.3</div>
+    <div class="ver">Version 0.8.0</div>
   </div>
   <div id="splash-status">準備しています…</div>
 </div>
