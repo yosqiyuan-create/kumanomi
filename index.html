@@ -80,6 +80,17 @@
   #toast { position: fixed; left: 50%; top: 42%; transform: translate(-50%, -50%) scale(.9); font-size: 15px; font-weight: 600;
     background: rgba(255,140,40,.85); padding: 8px 18px; border-radius: 20px; opacity: 0; pointer-events: none;
     transition: opacity .25s, transform .25s; }
+  #death { position: fixed; inset: 0; z-index: 15; display: flex; align-items: center; justify-content: center;
+    background: rgba(2, 12, 22, .55); opacity: 0; visibility: hidden; transition: opacity 1.2s, visibility 1.2s; }
+  #death.show { opacity: 1; visibility: visible; }
+  #death .panel { width: min(320px, 86vw); text-align: center; padding: 24px 20px; border-radius: 20px;
+    background: rgba(8, 36, 56, .85); border: 1px solid rgba(170,220,255,.25); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+  #death .flower { font-size: 34px; }
+  #death .t { font-size: 18px; font-weight: 700; margin: 10px 0 12px; line-height: 1.5; }
+  #death .d { font-size: 14px; opacity: .9; margin: 4px 0; line-height: 1.5; }
+  #death .d.small { font-size: 12px; opacity: .7; margin-top: 10px; }
+  #btn-newfish { margin-top: 16px; font-size: 15px; font-weight: 700; padding: 12px 22px; border-radius: 26px;
+    background: linear-gradient(180deg, rgba(255,150,60,.95), rgba(230,100,20,.95)); }
   #toast.show { opacity: 1; transform: translate(-50%, -50%) scale(1); }
   #hint.hide { opacity: 0; }
 </style>
@@ -108,6 +119,16 @@
   </div>
   <div class="bottom"><button class="btn" id="btn-feed">エサをあげる</button><button class="btn" id="btn-water">水換え</button></div>
 </div>
+<div id="death">
+  <div class="panel">
+    <div class="flower">🌸</div>
+    <div class="t" id="death-title"></div>
+    <div class="d" id="death-days"></div>
+    <div class="d" id="death-cause"></div>
+    <div class="d small">おなかと水をこまめにお世話すると、長生きします。</div>
+    <button class="btn" id="btn-newfish">新しいクマノミを迎える</button>
+  </div>
+</div>
 <div id="toast">エサをあげました</div>
 <div id="hint">水の中をタップしてもエサが落ちます<br>指でなぞると見回せます</div>
 
@@ -117,7 +138,7 @@
     <img class="fish" src="icon-512.png" alt="">
     <h1>俺の水族館</h1>
     <div class="by">by Urushihara</div>
-    <div class="ver">Version 0.5.0</div>
+    <div class="ver">Version 0.6.0</div>
   </div>
   <div id="splash-status">準備しています…</div>
 </div>

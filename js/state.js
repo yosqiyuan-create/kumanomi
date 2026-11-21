@@ -11,6 +11,7 @@ export const RATES = {
   healthLossHungry: 1 / (3 * 24 * HOUR),
   healthLossDirty: 1 / (5 * 24 * HOUR),
   healthGain: 1 / (2 * 24 * HOUR),
+  growth: 1 / (365 * 24 * HOUR),    // young fish -> adult in about a year with good care
 };
 
 export function defaultState(now = Date.now()) {
@@ -18,9 +19,27 @@ export function defaultState(now = Date.now()) {
     version: 1,
     startedAt: now,
     lastSeen: now,
-    fish: { name: 'クマノミ', hunger: 0.6, health: 1.0, born: now },
+    fish: newFishData('クマノミ', now),
     tank: { dirt: 0.05 },
+    graves: [],
   };
+}
+
+// A young clownfish (幼魚) as it would come from a shop
+export function newFishData(name = 'クマノミ', now = Date.now()) {
+  return { name, hunger: 0.6, health: 1.0, born: now, growth: 0.08, alive: true };
+}
+
+// Called when the player welcomes a new fish after a death
+export function welcomeNewFish(s, name = 'クマノミ', now = Date.now()) {
+  s.fish = newFishData(name, now);
+  s.tank.dirt = Math.min(s.tank.dirt, 0.1);
+}
+
+export function stageName(g) {
+  if (g < 0.15) return '幼魚';
+  if (g < 0.6) return '若魚';
+  return '成魚';
 }
 
 export function loadState() {
@@ -28,7 +47,14 @@ export function loadState() {
     const raw = localStorage.getItem(KEY);
     if (raw) {
       const s = JSON.parse(raw);
-      if (s && s.version === 1 && s.fish && s.tank) return s;
+      if (s && s.version === 1 && s.fish && s.tank) {
+        // upgrade data saved by older versions
+        if (s.fish.growth === undefined) s.fish.growth = 0.08;
+        if (s.fish.alive === undefined) s.fish.alive = true;
+        if (!s.fish.born) s.fish.born = s.startedAt;
+        if (!s.graves) s.graves = [];
+        return s;
+      }
     }
   } catch {}
   return defaultState();
@@ -46,16 +72,25 @@ export function resetState() {
 const clamp01 = (v) => Math.max(0, Math.min(1, v));
 
 // Advance the state by `sec` seconds of real time
-export function simulate(s, sec) {
+export function simulate(s, sec, now = Date.now()) {
   const f = s.fish, t = s.tank;
-  f.hunger = clamp01(f.hunger - RATES.hungerDecay * sec);
   t.dirt = clamp01(t.dirt + RATES.dirtBase * sec);
+  if (!f.alive) return;
+  f.hunger = clamp01(f.hunger - RATES.hungerDecay * sec);
   let dh = 0;
   if (f.hunger < 0.15) dh -= RATES.healthLossHungry;
   if (t.dirt > 0.7) dh -= RATES.healthLossDirty * (1 + (t.dirt - 0.7) * 3);
   if (dh === 0 && f.hunger > 0.35 && t.dirt < 0.5) dh = RATES.healthGain;
-  // death is handled in a later step: keep the fish just alive for now
-  f.health = Math.max(0.05, Math.min(1, f.health + dh * sec));
+  f.health = Math.min(1, f.health + dh * sec);
+  // growth: good care = full speed, poor care = slow
+  const care = (f.hunger > 0.3 && t.dirt < 0.6) ? 1 : 0.3;
+  f.growth = Math.min(1, f.growth + RATES.growth * care * (0.5 + 0.5 * f.health) * sec);
+  if (f.health <= 0) {
+    f.health = 0;
+    f.alive = false;
+    f.diedAt = now;
+    f.cause = f.hunger < 0.15 && t.dirt > 0.7 ? 'both' : (f.hunger < 0.15 ? 'hunger' : 'water');
+  }
 }
 
 // Catch up on the time the app was closed (in 1-hour slices, at most 60 days)
@@ -63,9 +98,11 @@ export function catchUp(s, now = Date.now()) {
   let sec = Math.max(0, (now - (s.lastSeen || now)) / 1000);
   sec = Math.min(sec, 60 * 24 * HOUR);
   const away = sec;
+  let at = now - sec * 1000;
   while (sec > 0) {
     const step = Math.min(HOUR, sec);
-    simulate(s, step);
+    at += step * 1000;
+    simulate(s, step, at);
     sec -= step;
   }
   s.lastSeen = now;
@@ -73,17 +110,20 @@ export function catchUp(s, now = Date.now()) {
 }
 
 export function dayCount(s, now = Date.now()) {
-  return Math.floor((now - s.startedAt) / (24 * HOUR * 1000)) + 1;
+  const end = s.fish.alive ? now : (s.fish.diedAt || now);
+  return Math.floor((end - (s.fish.born || s.startedAt)) / (24 * HOUR * 1000)) + 1;
 }
 
 // Short messages about what needs care (empty array = all good)
 export function careMessages(s) {
   const m = [];
+  if (!s.fish.alive) return m;
+  if (s.fish.health < 0.12) m.push('とても弱っています！すぐにお世話を');
   if (s.fish.hunger < 0.15) m.push('おなかがペコペコです');
   else if (s.fish.hunger < 0.35) m.push('おなかがすいてきました');
   if (s.tank.dirt > 0.7) m.push('水がかなり汚れています。水換えしてください');
   else if (s.tank.dirt > 0.45) m.push('水が汚れてきました');
-  if (s.fish.health < 0.3) m.push('元気がありません');
+  if (s.fish.health < 0.3 && s.fish.health >= 0.12) m.push('元気がありません');
   return m;
 }
 

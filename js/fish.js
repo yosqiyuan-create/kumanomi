@@ -378,7 +378,39 @@ export class Clownfish {
     this.target.set(x, y, z);
   }
 
+  // growth 0..1 -> body size (young fish about half the adult size)
+  setGrowth(g) {
+    const k = Math.min(1, Math.max(0, g));
+    this.scale = 0.5 + 0.5 * k * k * (3 - 2 * k);
+  }
+
+  die(instant = false) {
+    if (this.dead) return;
+    this.dead = true;
+    const f = new THREE.Vector3(0, 0, 1).applyQuaternion(this.object.quaternion);
+    f.y = 0; if (f.lengthSq() < 1e-4) f.set(0, 0, 1); f.normalize();
+    this._m.lookAt(f, new THREE.Vector3(), new THREE.Vector3(0, 1, 0));
+    const level = new THREE.Quaternion().setFromRotationMatrix(this._m);
+    this.deadQ = level.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), 1.45));
+    if (instant) {
+      this.pos.y = sandHeight(this.pos.x, this.pos.z) + 0.07 * this.scale;
+      this.object.position.copy(this.pos);
+      this.object.quaternion.copy(this.deadQ);
+    }
+  }
+
+  updateDead(dt) {
+    const floor = sandHeight(this.pos.x, this.pos.z) + 0.07 * this.scale;
+    if (this.pos.y > floor) this.pos.y = Math.max(floor, this.pos.y - dt * 0.18);
+    this.object.position.copy(this.pos);
+    this.object.quaternion.slerp(this.deadQ, Math.min(1, dt * 0.8));
+    this.uniforms.uAmp.value *= Math.max(0, 1 - dt * 2);
+    this.uniforms.uTurn.value = 0;
+    this.object.scale.setScalar(this.scale);
+  }
+
   update(dt, world) {
+    if (this.dead) { this.updateDead(dt); return; }
     this.stateTime += dt;
     const vigor = 0.35 + 0.65 * (this.health ?? 1);
     let maxSpeed = 0.45 * vigor;

@@ -11,9 +11,9 @@ import {
 import { buildReef } from './reef.js';
 import { Clownfish } from './fish.js';
 import { FoodSystem } from './food.js';
-import { loadState, saveState, simulate, catchUp, dayCount, careMessages, formatAway, RATES } from './state.js';
+import { loadState, saveState, simulate, catchUp, dayCount, careMessages, formatAway, RATES, stageName, welcomeNewFish } from './state.js';
 
-export const APP = { name: '俺の水族館', version: '0.5.0' };
+export const APP = { name: '俺の水族館', version: '0.6.0' };
 
 const QUALITY = {
   low: { label: '軽量', dpr: 1, shadows: false, shadowSize: 0, bloom: false, particles: 120, coral: 0.55 },
@@ -77,8 +77,14 @@ async function init() {
   const state = loadState();
   const awaySec = catchUp(state);
   saveState(state);
-  const fish = new Clownfish(scene, { pos: reef.anemonePos.clone().add(new THREE.Vector3(0.6, 0.4, 0.3)), hunger: state.fish.hunger });
-  fish.health = state.fish.health;
+  const spawnFish = () => {
+    const f = new Clownfish(scene, { pos: reef.anemonePos.clone().add(new THREE.Vector3(0.6, 0.4, 0.3)), hunger: state.fish.hunger });
+    f.health = state.fish.health;
+    f.setGrowth(state.fish.growth);
+    if (!state.fish.alive) f.die(true);
+    return f;
+  };
+  let fish = spawnFish();
   const world = { food, obstacles: reef.obstacles, anemonePos: reef.anemonePos };
 
   // camera + controls
@@ -164,6 +170,7 @@ async function init() {
     toastTimer = setTimeout(() => toast.classList.remove('show'), ms);
   }
   function feed(x, y, z) {
+    if (!state.fish.alive) return;
     food.drop(x, y, z, 10);
     showToast(fish.hunger > 0.95 ? 'おなかいっぱいみたい' : 'エサをあげました');
     hideHint();
@@ -273,7 +280,7 @@ async function init() {
     setBar(bars.hunger, state.fish.hunger);
     setBar(bars.health, state.fish.health);
     setBar(bars.water, 1 - state.tank.dirt);
-    dayEl.textContent = `飼って${dayCount(state)}日目`;
+    dayEl.textContent = `${stageName(state.fish.growth)}・飼って${dayCount(state)}日目`;
     const m = careMessages(state);
     msgEl.textContent = m[0] || '';
     msgEl.style.display = m.length ? 'block' : 'none';
@@ -281,12 +288,49 @@ async function init() {
   updateHud();
   applyWater(state.tank.dirt);
 
+  // ---- death / farewell ----
+  const deathEl = document.getElementById('death');
+  const causeText = { hunger: 'おなかがすいたままでした', water: '水が汚れたままでした', both: 'おなかがすいて、水も汚れていました' };
+  let deathShown = false;
+  function showDeath(delay = 0) {
+    if (deathShown) return;
+    deathShown = true;
+    if (follow) setFollow(false);
+    const f = state.fish;
+    document.getElementById('death-title').textContent = `${f.name}は天国へ旅立ちました`;
+    document.getElementById('death-days').textContent = `いっしょに過ごした日数：${dayCount(state)}日`;
+    document.getElementById('death-cause').textContent = '原因：' + (causeText[f.cause] || '弱ってしまいました');
+    setTimeout(() => deathEl.classList.add('show'), delay);
+  }
+  function checkDeath(delay) {
+    if (!state.fish.alive) {
+      fish.die();
+      showDeath(delay);
+    }
+  }
+  document.getElementById('btn-newfish').addEventListener('click', () => {
+    const f = state.fish;
+    state.graves.push({ name: f.name, days: dayCount(state), diedAt: f.diedAt || Date.now(), cause: f.cause || '' });
+    const name = (window.prompt('新しいクマノミの名前をつけてください', 'クマノミ') || 'クマノミ').trim().slice(0, 12) || 'クマノミ';
+    welcomeNewFish(state, name);
+    saveState(state);
+    scene.remove(fish.object);
+    fish = spawnFish();
+    window.__reef.fish = fish;
+    nameEl.textContent = state.fish.name;
+    deathEl.classList.remove('show');
+    deathShown = false;
+    updateHud();
+    showToast(`${name}がやってきました！`, 2200);
+  });
+
   // ---- save / resume ----
   function resumeFromBackground() {
     const away = catchUp(state);
     fish.hunger = state.fish.hunger; fish.health = state.fish.health;
     applyWater(state.tank.dirt);
     updateHud();
+    if (!state.fish.alive) { checkDeath(300); return; }
     const a = formatAway(away);
     if (a && away > 600) showToast(a + '！' + (careMessages(state)[0] || 'みんな元気です'), 2600);
   }
@@ -303,6 +347,7 @@ async function init() {
     document.getElementById('splash').classList.add('hide');
     document.getElementById('hud').classList.add('show');
     hint.classList.add('show');
+    if (!state.fish.alive) { showDeath(1200); return; }
     const a = formatAway(awaySec);
     if (a && awaySec > 600) setTimeout(() => showToast(a + '！' + (careMessages(state)[0] || 'みんな元気です'), 2800), 900);
   }, wait);
@@ -328,13 +373,14 @@ async function init() {
     if (food.rotted) { state.tank.dirt = Math.min(1, state.tank.dirt + food.rotted * RATES.dirtPerRottenPellet); food.rotted = 0; }
     if (cleaning > 0) { const d = Math.min(cleaning, dt * 0.35); cleaning -= d; state.tank.dirt = Math.max(0, state.tank.dirt - d); }
     fish.hunger = state.fish.hunger; fish.health = state.fish.health;
+    if (!state.fish.alive && !fish.dead) checkDeath(3000);
     const dbg = window.__reef && window.__reef.paused;
     if (!dbg) fish.update(dt, world);
     state.fish.hunger = fish.hunger;
     rays.userData.update(camera);
     if (!dbg) { updateFollow(dt); controls.update(); }
     hudT += dt;
-    if (hudT > 0.5) { hudT = 0; updateHud(); applyWater(state.tank.dirt); }
+    if (hudT > 0.5) { hudT = 0; updateHud(); applyWater(state.tank.dirt); fish.setGrowth(state.fish.growth); }
     if (composer) composer.render(); else renderer.render(scene, camera);
   }
   loop();
