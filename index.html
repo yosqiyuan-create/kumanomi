@@ -91,6 +91,24 @@
   #death .d.small { font-size: 12px; opacity: .7; margin-top: 10px; }
   #btn-newfish { margin-top: 16px; font-size: 15px; font-weight: 700; padding: 12px 22px; border-radius: 26px;
     background: linear-gradient(180deg, rgba(255,150,60,.95), rgba(230,100,20,.95)); }
+  #btn-nursery { display: none; background: rgba(40, 160, 130, .55); border-color: rgba(170,255,225,.45); }
+  #nursery { position: fixed; inset: 0; z-index: 14; display: flex; align-items: center; justify-content: center;
+    background: rgba(2, 12, 22, .45); opacity: 0; visibility: hidden; transition: opacity .4s, visibility .4s; }
+  #nursery.show { opacity: 1; visibility: visible; }
+  #nursery .panel { width: min(330px, 90vw); padding: 18px 18px 14px; border-radius: 18px; text-align: left;
+    background: rgba(8, 36, 56, .9); border: 1px solid rgba(170,220,255,.25); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+  #nursery .t { font-size: 17px; font-weight: 700; margin-bottom: 10px; text-align: center; }
+  #nursery .d { font-size: 13px; line-height: 1.6; margin: 8px 0; }
+  #nursery .meter { margin: 4px 0 10px; }
+  #ny-tank { position: relative; height: 90px; border-radius: 12px; margin: 10px 0 4px; overflow: hidden;
+    background: linear-gradient(180deg, #1d6a86, #0b3550); border: 1px solid rgba(170,220,255,.2); }
+  #ny-tank i { position: absolute; width: 4px; height: 4px; border-radius: 50%; background: rgba(240,250,255,.75);
+    animation: fry 6s ease-in-out infinite alternate; }
+  #ny-tank.grown i { width: 8px; height: 4px; border-radius: 3px; background: #ff7a1a;
+    box-shadow: inset -2px 0 0 #fff; }
+  @keyframes fry { 0% { transform: translate(0,0); } 33% { transform: translate(18px,-8px); } 66% { transform: translate(-12px,6px); } 100% { transform: translate(10px,10px); } }
+  .ny-btns { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 6px; }
+  #toast { white-space: pre-line; text-align: center; max-width: 88vw; }
   #toast.show { opacity: 1; transform: translate(-50%, -50%) scale(1); }
   #hint.hide { opacity: 0; }
 </style>
@@ -119,6 +137,7 @@
       <button class="btn" id="btn-feed">エサをあげる</button>
       <button class="btn" id="btn-water">水換え</button>
       <button class="btn" id="btn-mate">仲間を迎える</button>
+      <button class="btn" id="btn-nursery">稚魚水槽</button>
     </div>
   </div>
 </div>
@@ -132,6 +151,21 @@
     <button class="btn" id="btn-newfish">新しいクマノミを迎える</button>
   </div>
 </div>
+<div id="nursery">
+  <div class="panel">
+    <div class="t">卵と稚魚水槽</div>
+    <div class="d" id="ny-eggs"></div>
+    <div id="ny-tank"></div>
+    <div class="d" id="ny-fry"></div>
+    <div class="meter" id="ny-hunger"><span class="lbl">おなか</span><div class="track"><div id="ny-hunger-bar" class="bar"></div></div></div>
+    <div class="ny-btns">
+      <button class="btn" id="ny-feed">ワムシをあげる</button>
+      <button class="btn" id="ny-move">1匹を水槽に移す</button>
+      <button class="btn" id="ny-release">里親に出す</button>
+      <button class="btn" id="ny-close">閉じる</button>
+    </div>
+  </div>
+</div>
 <div id="toast">エサをあげました</div>
 <div id="hint">水の中をタップしてもエサが落ちます<br>指でなぞると見回せます</div>
 
@@ -141,7 +175,7 @@
     <img class="fish" src="icon-512.png" alt="">
     <h1>俺の水族館</h1>
     <div class="by">by Urushihara</div>
-    <div class="ver">Version 0.9.0</div>
+    <div class="ver">Version 0.10.0</div>
   </div>
   <div id="splash-status">準備しています…</div>
 </div>

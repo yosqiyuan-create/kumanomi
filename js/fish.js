@@ -367,7 +367,16 @@ export class Clownfish {
     this._fwd = new THREE.Vector3(0, 0, 1);
   }
 
+  isGuarding(world) {
+    return world.eggSpot && this.data && this.data.sex === 'male' && !this.dead;
+  }
+
   pickWanderTarget(world) {
+    if (this.isGuarding(world) && Math.random() < 0.75) {
+      const e = world.eggSpot.p, n = world.eggSpot.n;
+      this.target.copy(e).addScaledVector(n, 0.18 * this.scale + 0.08).add(new THREE.Vector3((Math.random() - 0.5) * 0.4, Math.random() * 0.25, (Math.random() - 0.5) * 0.4));
+      return;
+    }
     const h = world.anemonePos;
     const r = Math.random() < 0.6 ? 0.6 + Math.random() * 1.4 : 1.5 + Math.random() * 2.2;
     const a = Math.random() * Math.PI * 2;
@@ -436,7 +445,14 @@ export class Clownfish {
       this.pickWanderTarget(world);
     }
 
-    if (this.state === 'home') {
+    if (this.state === 'home' && this.isGuarding(world)) {
+      // hover right over the eggs, fanning them with the fins
+      const t = this.stateTime, e = world.eggSpot.p, n = world.eggSpot.n;
+      this.target.copy(e).addScaledVector(n, 0.12 * this.scale + 0.06);
+      this.target.x += Math.cos(t * 0.9) * 0.05; this.target.z += Math.sin(t * 0.9) * 0.05;
+      maxSpeed = 0.25;
+      if (this.stateTime > this.homeFor) { this.state = 'wander'; this.pickWanderTarget(world); this.stateTime = 0; }
+    } else if (this.state === 'home') {
       const t = this.stateTime;
       const h = world.anemonePos;
       this.target.set(h.x + Math.cos(t * 0.7) * 0.22, h.y - 0.05 + Math.sin(t * 1.3) * 0.06, h.z + Math.sin(t * 0.7) * 0.18);
@@ -448,7 +464,7 @@ export class Clownfish {
         this.wait -= dt;
         maxSpeed = 0.06;
         if (this.wait <= 0) {
-          if (Math.random() < 0.3) { this.state = 'home'; this.stateTime = 0; this.homeFor = 5 + Math.random() * 8; }
+          if (Math.random() < (this.isGuarding(world) ? 0.7 : 0.3)) { this.state = 'home'; this.stateTime = 0; this.homeFor = 5 + Math.random() * 8; }
           else this.pickWanderTarget(world);
         }
       } else if (d < 0.18) {
@@ -482,7 +498,8 @@ export class Clownfish {
     if (this.pos.y > 6.3) push.y -= (this.pos.y - 6.3) * 4;
     if (this.pos.x < -4.5) push.x += 2; if (this.pos.x > 4.5) push.x -= 2;
     if (this.pos.z < -2.0) push.z += 2; if (this.pos.z > 2.2) push.z -= 2;
-    if (this.state === 'home') push.multiplyScalar(0.15);
+    if (this.isGuarding(world) && this.pos.distanceTo(world.eggSpot.p) < 1.0) push.multiplyScalar(0.05);
+    else if (this.state === 'home') push.multiplyScalar(0.15);
     if (this.state === 'food' && dist < 0.8) push.multiplyScalar(0.1);
     desired.add(push);
 
@@ -517,7 +534,8 @@ export class Clownfish {
     const targetAmp = hover ? 0.018 : 0.03 + this.speed * 0.07;
     this.uniforms.uAmp.value += (targetAmp - this.uniforms.uAmp.value) * Math.min(1, dt * 3);
     this.uniforms.uTurn.value = this.turnS;
-    this.finT += dt * (hover ? 11 : 8);
+    const fanning = this.state === 'home' && world.eggSpot && this.isGuarding(world);
+    this.finT += dt * (fanning ? 18 : hover ? 11 : 8);
     for (const p of this.pecs) {
       const s = p.userData.side;
       p.rotation.set(0, s * (0.55 + 0.45 * Math.sin(this.finT + (s > 0 ? 0 : Math.PI))), 0);

@@ -11,13 +11,15 @@ import {
 import { buildReef } from './reef.js';
 import { Clownfish } from './fish.js';
 import { FoodSystem } from './food.js';
+import { EggCluster } from './eggs.js';
 import { AquariumSound, SOUND_LABEL } from './sound.js';
 import {
   loadState, saveState, simulate, catchUp, dayCount, careMessages, worstMessage, formatAway, RATES,
-  stageName, sexName, addFish, farewell, aliveFishes, updateSexes, MAX_FISH,
+  stageName, sexName, addFish, farewell, aliveFishes, updateSexes, MAX_FISH, PAIR,
+  feedNursery, moveFryToTank, releaseFry, nurseryInfo,
 } from './state.js';
 
-export const APP = { name: '俺の水族館', version: '0.9.0' };
+export const APP = { name: '俺の水族館', version: '0.10.0' };
 
 const QUALITY = {
   low: { label: '軽量', dpr: 1, shadows: false, shadowSize: 0, bloom: false, particles: 120, coral: 0.55 },
@@ -85,7 +87,14 @@ async function init() {
 
   // one 3D fish per saved fish
   const fishes = [];
-  const world = { food, obstacles: reef.obstacles, anemonePos: reef.anemonePos, fishes };
+  const world = { food, obstacles: reef.obstacles, anemonePos: reef.anemonePos, fishes, eggSpot: null };
+  const eggs = new EggCluster(scene, reef.eggSpot);
+  function updateEggs() {
+    const c = state.breed.clutch;
+    world.eggSpot = c ? reef.eggSpot : null;
+    eggs.update(c ? { eggs: c.eggs, laid: c.laid, progress: Math.min(1, (Date.now() - c.laidAt) / (c.hatchAt - c.laidAt)) } : null);
+  }
+  updateEggs();
   function spawnFish(data, arriving = false) {
     const start = arriving
       ? reef.anemonePos.clone().add(new THREE.Vector3(0.8, 2.6, 0.4))
@@ -154,6 +163,20 @@ async function init() {
   // ---- toast ----
   const toast = document.getElementById('toast');
   let toastTimer = 0;
+  const toastQueue = [];
+  let toastBusy = false;
+  // important news: shown one after another
+  function queueToast(text, ms = 3600) {
+    toastQueue.push([text, ms]);
+    if (!toastBusy) nextToast();
+  }
+  function nextToast() {
+    const it = toastQueue.shift();
+    if (!it) { toastBusy = false; return; }
+    toastBusy = true;
+    showToast(it[0], it[1]);
+    setTimeout(nextToast, it[1] + 350);
+  }
   function showToast(text, ms = 1400) {
     toast.textContent = text;
     toast.classList.add('show');
@@ -302,6 +325,7 @@ async function init() {
     el.classList.toggle('low', v < 0.25);
   }
   const mateBtn = document.getElementById('btn-mate');
+  const nurseryBtn = document.getElementById('btn-nursery');
   function updateHud() {
     if (sel >= fishes.length) sel = 0;
     const d = selFish().data;
@@ -316,7 +340,10 @@ async function init() {
     const m = careMessages(state, d);
     msgEl.textContent = m[0] || '';
     msgEl.style.display = m.length ? 'block' : 'none';
-    mateBtn.style.display = aliveFishes(state).length < MAX_FISH && !fishes.some((f) => f.dead) ? '' : 'none';
+    mateBtn.style.display = aliveFishes(state).length < PAIR && !fishes.some((f) => f.dead) ? '' : 'none';
+    nurseryBtn.style.display = state.breed.clutch || state.breed.nursery ? '' : 'none';
+    const ni = nurseryInfo(state);
+    nurseryBtn.textContent = ni.fry ? `稚魚水槽（${ni.fry}）` : '卵を見る';
   }
 
   // ---- welcome a companion (make a pair) ----
@@ -329,7 +356,7 @@ async function init() {
     showToast(`${name}がやってきました！`, 2200);
   }
   onTap(mateBtn, () => {
-    if (aliveFishes(state).length >= MAX_FISH) return;
+    if (aliveFishes(state).length >= PAIR) return;
     const n = window.prompt('仲間のクマノミの名前をつけてください', 'クマノミ2');
     if (n === null) return;
     welcome((n.trim() || 'クマノミ').slice(0, 12));
@@ -381,6 +408,84 @@ async function init() {
     for (const f of fishes) if (!f.data.alive && f.dead && !deathQueue.includes(f) && deathShowing !== f) { deathQueue.push(f); setTimeout(showNextDeath, delay); }
   }
 
+  // ---- breeding news ----
+  const eventText = {
+    'spawn': (e) => `ペアが産卵しました！（卵 約${e.n}個）\n${e.father}が卵を守っています`,
+    'eggs-lost': () => '卵がだめになってしまいました…\n水をきれいに保ちましょう',
+    'hatch': (e) => `卵がふ化しました！赤ちゃん${e.n}匹\n稚魚水槽でワムシをあげてください`,
+    'settled': (e) => `稚魚${e.n}匹が、底で暮らせるようになりました`,
+    'fry-ready': (e) => `稚魚${e.n}匹が幼魚に育ちました！\n水槽に移すか、里親に出せます`,
+    'fry-lost': () => '稚魚がいなくなってしまいました…',
+  };
+  function drainEvents() {
+    while (state.events.length) {
+      const e = state.events.shift();
+      const f = eventText[e.type];
+      if (f) queueToast(f(e), 4200);
+    }
+  }
+
+  // ---- nursery panel (eggs + fry) ----
+  const nyEl = document.getElementById('nursery');
+  const nyTank = document.getElementById('ny-tank');
+  let nyOpen = false;
+  function renderNursery() {
+    const ni = nurseryInfo(state);
+    document.getElementById('ny-eggs').innerHTML = ni.eggs
+      ? `<b>卵</b>：約${ni.eggs}個・産卵${ni.eggDay}日目<br>ふ化まで あと約${ni.hatchIn}日（オスが守っています）`
+      : '<b>卵</b>：今はありません';
+    const fryBox = document.getElementById('ny-fry');
+    if (ni.fry) {
+      fryBox.innerHTML = `<b>稚魚</b>：${ni.fry}匹・ふ化${ni.fryDay}日目<br>${ni.fryStage}` + (ni.ready ? '' : `<br>水槽に移せるまで あと約${ni.readyIn}日`);
+      const bar = document.getElementById('ny-hunger-bar');
+      bar.style.width = Math.round(ni.fryHunger * 100) + '%';
+      bar.classList.toggle('low', ni.fryHunger < 0.25);
+      document.getElementById('ny-hunger').style.display = '';
+      document.getElementById('ny-feed').style.display = '';
+      const canMove = ni.ready && aliveFishes(state).length < MAX_FISH;
+      document.getElementById('ny-move').style.display = canMove ? '' : 'none';
+      document.getElementById('ny-release').style.display = ni.ready ? '' : 'none';
+      nyTank.style.display = '';
+      // little moving dots for the babies
+      const want = Math.min(40, ni.fry);
+      while (nyTank.children.length < want) {
+        const d = document.createElement('i');
+        d.style.left = (5 + Math.random() * 90) + '%';
+        d.style.top = (10 + Math.random() * 80) + '%';
+        d.style.animationDelay = (-Math.random() * 6) + 's';
+        d.style.animationDuration = (4 + Math.random() * 4) + 's';
+        nyTank.appendChild(d);
+      }
+      while (nyTank.children.length > want) nyTank.lastChild.remove();
+      nyTank.classList.toggle('grown', ni.fryDay > 10);
+    } else {
+      fryBox.innerHTML = '<b>稚魚</b>：今はいません';
+      for (const id of ['ny-hunger', 'ny-feed', 'ny-move', 'ny-release']) document.getElementById(id).style.display = 'none';
+      nyTank.style.display = 'none';
+    }
+  }
+  onTap(nurseryBtn, () => { nyOpen = true; renderNursery(); nyEl.classList.add('show'); });
+  onTap(document.getElementById('ny-close'), () => { nyOpen = false; nyEl.classList.remove('show'); });
+  onTap(document.getElementById('ny-feed'), () => {
+    if (feedNursery(state)) { sound.plop(null); showToast('ワムシをあげました'); renderNursery(); saveState(state); }
+  });
+  onTap(document.getElementById('ny-move'), () => {
+    const n = window.prompt('水槽に移す子の名前をつけてください', 'チビ');
+    if (n === null) return;
+    const d = moveFryToTank(state, (n.trim() || 'チビ').slice(0, 12));
+    if (!d) { showToast('今は移せません'); return; }
+    spawnFish(d, true);
+    saveState(state); updateHud(); renderNursery();
+    showToast(`${d.name}が水槽にやってきました！`, 2400);
+  });
+  onTap(document.getElementById('ny-release'), () => {
+    if (!window.confirm('残っている稚魚を全部、里親に出しますか？')) return;
+    const n = releaseFry(state);
+    saveState(state); updateHud(); renderNursery();
+    showToast(`${n}匹を里親に出しました。元気でね！`, 2600);
+    nyOpen = false; nyEl.classList.remove('show');
+  });
+
   updateHud();
   applyWater(state.tank.dirt);
 
@@ -400,6 +505,8 @@ async function init() {
     applyWater(state.tank.dirt);
     updateHud();
     announceSex();
+    updateEggs();
+    drainEvents();
     checkDeaths(300);
     const a = formatAway(away);
     if (a && away > 600 && !deathQueue.length) showToast(a + '！' + (worstMessage(state) || 'みんな元気です'), 2600);
@@ -422,6 +529,7 @@ async function init() {
     const a = formatAway(awaySec);
     if (a && awaySec > 600) setTimeout(() => showToast(a + '！' + (worstMessage(state) || 'みんな元気です'), 2800), 900);
     setTimeout(announceSex, a && awaySec > 600 ? 4000 : 900);
+    setTimeout(drainEvents, a && awaySec > 600 ? 4500 : 1400);
   }, wait);
 
   // ---- loop ----
@@ -459,11 +567,14 @@ async function init() {
       applyWater(state.tank.dirt);
       for (const f of fishes) f.setGrowth(f.data.growth);
       announceSex();
+      updateEggs();
+      if (document.getElementById('hud').classList.contains('show')) drainEvents();
+      if (nyOpen) renderNursery();
     }
     if (composer) composer.render(); else renderer.render(scene, camera);
   }
   loop();
-  window.__reef = { scene, camera, fishes, get fish() { return fishes[0]; }, food, controls, renderer, world, state };
+  window.__reef = { eggs, scene, camera, fishes, get fish() { return fishes[0]; }, food, controls, renderer, world, state };
 }
 
 init().catch((err) => {

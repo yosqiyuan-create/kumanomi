@@ -365,6 +365,18 @@ export function buildReef(scene, quality) {
 
   const anemXZ = new THREE.Vector2(-1.2, 0.1);
   const dens = quality?.coral ?? 1;
+
+  // where the pair lays eggs: the nearest rock surface next to the anemone (kept free of coral)
+  let eggSpot = null;
+  for (let r = 0.6; r <= 2.6 && !eggSpot; r += 0.2) {
+    for (let k = 0; k < 16; k++) {
+      const a = k / 16 * Math.PI * 2 + r;
+      const h = place(anemXZ.x + Math.cos(a) * r, anemXZ.y + Math.sin(a) * r, true);
+      if (h && h.n.y > 0.35 && h.p.y < 1.6) { eggSpot = { p: h.p.clone(), n: h.n.clone() }; break; }
+    }
+  }
+  if (!eggSpot) { const h = place(anemXZ.x + 0.6, anemXZ.y - 0.4); eggSpot = { p: h.p.clone(), n: h.n.clone() }; }
+  const nearEggs = (p) => p.distanceTo(eggSpot.p) < 0.42;
   const pal = {
     purple: ['#4a2f6a', '#d9b4ff'], pink: ['#7a2e55', '#ffa6d8'], yellow: ['#6a5a1c', '#fff27a'],
     green: ['#2f5a2a', '#a6ff6a'], blue: ['#1f3f6a', '#8fd8ff'], orange: ['#7a3a1c', '#ffb66a'],
@@ -403,7 +415,7 @@ export function buildReef(scene, quality) {
       if (n.y < -0.35) continue;
       if (p.y < sandHeight(p.x, p.z) + 0.06) continue;
       if (Math.hypot(p.x - anemXZ.x, p.z - anemXZ.y) < 0.75 && p.y < 1.0) continue;
-      if (tooClose3(p, 0.2)) continue;
+      if (tooClose3(p, 0.2) || nearEggs(p)) continue;
       if (rng() > dens) continue;
       addSpot({ x: p.x, z: p.z, p, n, rock: true, wall: n.y < 0.45 });
     }
@@ -415,7 +427,7 @@ export function buildReef(scene, quality) {
     if (z > 0.9 && Math.abs(x + 0.3) < 0.9) continue;
     if (tooClose(x, z, 0.42)) continue;
     const h = place(x, z);
-    if (h.rock) continue;
+    if (h.rock || nearEggs(h.p)) continue;
     if (rng() <= dens) addSpot({ x, z, ...h });
   }
 
@@ -575,5 +587,5 @@ export function buildReef(scene, quality) {
   anemone.position.copy(anemPos);
   scene.add(anemone);
 
-  return { obstacles, anemonePos: anemPos.clone().add(new THREE.Vector3(0, 0.45, 0)), rocks, spotCount: spots.length };
+  return { obstacles, anemonePos: anemPos.clone().add(new THREE.Vector3(0, 0.45, 0)), rocks, spotCount: spots.length, eggSpot };
 }
