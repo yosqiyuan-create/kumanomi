@@ -14,7 +14,7 @@ import { FoodSystem } from './food.js';
 import { AquariumSound, SOUND_LABEL } from './sound.js';
 import { loadState, saveState, simulate, catchUp, dayCount, careMessages, formatAway, RATES, stageName, welcomeNewFish } from './state.js';
 
-export const APP = { name: '俺の水族館', version: '0.7.2' };
+export const APP = { name: '俺の水族館', version: '0.7.3' };
 
 const QUALITY = {
   low: { label: '軽量', dpr: 1, shadows: false, shadowSize: 0, bloom: false, particles: 120, coral: 0.55 },

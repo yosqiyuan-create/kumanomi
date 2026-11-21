@@ -1,7 +1,7 @@
 // Underwater coral-reef soundscape, synthesized with the Web Audio API (no audio files)
-// What a diver actually hears on a reef:
-//  - snapping shrimp: dense crackling, the dominant reef sound
-//  - a low, steady ocean presence (no surface waves)
+// The sound of moving water heard from inside the sea:
+//  - deep, muffled flow (no surface waves, no crackle)
+//  - a soft current that slowly swells and eases, never rhythmic
 
 const PREF = 'ore-no-suizokukan.sound';
 export const SOUND_MODES = ['sea', 'off'];
@@ -90,64 +90,73 @@ export class AquariumSound {
     return s;
   }
 
-  // Snapping shrimp: thousands of tiny sharp clicks, mostly faint, a few close and loud
-  _crackleBuffer(sec = 7) {
-    const ctx = this.ctx, sr = ctx.sampleRate, len = Math.floor(sr * sec);
-    const buf = ctx.createBuffer(2, len, sr);
-    const L = buf.getChannelData(0), R = buf.getChannelData(1);
-    const rate = 420; // clicks per second
-    const n = Math.floor(rate * sec);
-    const decay = sr * 0.00018;
-    for (let k = 0; k < n; k++) {
-      const pos = Math.floor(Math.random() * (len - 64));
-      const r = Math.random();
-      const amp = 0.04 + 0.9 * Math.pow(r, 7);      // most are distant
-      const pan = Math.random();
-      const gl = amp * Math.sqrt(1 - pan), gr = amp * Math.sqrt(pan);
-      for (let j = 0; j < 48; j++) {
-        const v = Math.exp(-j / decay) * (Math.random() * 2 - 1) * (j === 0 ? 1.6 : 1);
-        L[pos + j] += v * gl;
-        R[pos + j] += v * gr;
+  // Pink-ish noise (softer than white), separate per channel for width
+  _pinkBuffer(sec) {
+    const ctx = this.ctx, len = Math.floor(ctx.sampleRate * sec);
+    const buf = ctx.createBuffer(2, len, ctx.sampleRate);
+    for (let ch = 0; ch < 2; ch++) {
+      const d = buf.getChannelData(ch);
+      let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0;
+      for (let i = 0; i < len; i++) {
+        const w = Math.random() * 2 - 1;
+        b0 = 0.99886 * b0 + w * 0.0555179; b1 = 0.99332 * b1 + w * 0.0750759;
+        b2 = 0.969 * b2 + w * 0.153852; b3 = 0.8665 * b3 + w * 0.3104856;
+        b4 = 0.55 * b4 + w * 0.5329522; b5 = -0.7616 * b5 - w * 0.016898;
+        d[i] = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + w * 0.5362) * 0.11;
+        b6 = w * 0.115926;
+      }
+      // smooth the loop seam
+      const fade = Math.floor(ctx.sampleRate * 0.5);
+      for (let i = 0; i < fade; i++) {
+        const k = i / fade;
+        d[len - fade + i] = d[len - fade + i] * (1 - k) + d[i] * k;
       }
     }
-    // normalise so the loudest snap never clips
-    let pk = 0;
-    for (let i = 0; i < len; i++) pk = Math.max(pk, Math.abs(L[i]), Math.abs(R[i]));
-    const k = 1 / (pk || 1);
-    for (let i = 0; i < len; i++) { L[i] *= k; R[i] *= k; }
     return buf;
+  }
+
+  // slow, irregular swell (sum of unrelated slow waves) driving a gain
+  _swell(param, depth, freqs) {
+    for (const f of freqs) {
+      const o = this.ctx.createOscillator(); o.frequency.value = f;
+      const g = this.ctx.createGain(); g.gain.value = depth / freqs.length;
+      o.connect(g).connect(param);
+      o.start();
+    }
   }
 
   _ambience() {
     const ctx = this.ctx, now = ctx.currentTime;
+    const pink = this._pinkBuffer(9);
+    const src = (offset) => {
+      const s = ctx.createBufferSource();
+      s.buffer = pink; s.loop = true;
+      s.start(now, offset);
+      return s;
+    };
 
-    // 1) snapping shrimp crackle (high, bright, constant)
-    const cr = ctx.createBufferSource();
-    cr.buffer = this._crackleBuffer(7); cr.loop = true;
-    const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 1800; hp.Q.value = 0.5;
-    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 11000;
-    const cg = ctx.createGain(); cg.gain.value = 0.4;
-    // very slow density drift so it never sounds like a loop
-    const drift = ctx.createOscillator(); drift.frequency.value = 0.031;
-    const driftG = ctx.createGain(); driftG.gain.value = 0.12;
-    drift.connect(driftG).connect(cg.gain);
-    cr.connect(hp).connect(lp).connect(cg).connect(this.master);
-    cr.start(now); drift.start(now);
+    // 1) main flow: muffled body of moving water
+    const a = src(0);
+    const aLp = ctx.createBiquadFilter(); aLp.type = 'lowpass'; aLp.frequency.value = 520; aLp.Q.value = 0.4;
+    const aLp2 = ctx.createBiquadFilter(); aLp2.type = 'lowpass'; aLp2.frequency.value = 900; aLp2.Q.value = 0.3;
+    const aG = ctx.createGain(); aG.gain.value = 0.1;
+    this._swell(aG.gain, 0.04, [0.047, 0.071, 0.113]);
+    a.connect(aLp).connect(aLp2).connect(aG).connect(this.master);
 
-    // 2) low ocean presence: deep, steady, no wave rhythm
-    const lo = this._noiseSource();
-    const l1 = ctx.createBiquadFilter(); l1.type = 'lowpass'; l1.frequency.value = 160; l1.Q.value = 0.5;
-    const l2 = ctx.createBiquadFilter(); l2.type = 'lowpass'; l2.frequency.value = 160; l2.Q.value = 0.5;
-    const lg = ctx.createGain(); lg.gain.value = 0.32;
-    lo.connect(l1).connect(l2).connect(lg).connect(this.master);
-    lo.start(now);
+    // 2) current brushing past: a soft band that drifts up and down in pitch
+    const b = src(3.1);
+    const bBp = ctx.createBiquadFilter(); bBp.type = 'bandpass'; bBp.frequency.value = 380; bBp.Q.value = 1.1;
+    this._swell(bBp.frequency, 160, [0.037, 0.059, 0.089]);
+    const bG = ctx.createGain(); bG.gain.value = 0.06;
+    this._swell(bG.gain, 0.038, [0.053, 0.097, 0.031]);
+    b.connect(bBp).connect(bG).connect(this.master);
 
-    // 3) faint mid "hush" of the water body
-    const mid = this._noiseSource();
-    const mb = ctx.createBiquadFilter(); mb.type = 'bandpass'; mb.frequency.value = 500; mb.Q.value = 0.6;
-    const mg = ctx.createGain(); mg.gain.value = 0.015;
-    mid.connect(mb).connect(mg).connect(this.master);
-    mid.start(now);
+    // 3) deep pressure of the open water
+    const c = src(6.3);
+    const cLp = ctx.createBiquadFilter(); cLp.type = 'lowpass'; cLp.frequency.value = 110; cLp.Q.value = 0.6;
+    const cG = ctx.createGain(); cG.gain.value = 0.17;
+    this._swell(cG.gain, 0.045, [0.029, 0.061]);
+    c.connect(cLp).connect(cG).connect(this.master);
   }
 
   _panner(p) {
