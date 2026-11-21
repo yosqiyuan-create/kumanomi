@@ -11,9 +11,10 @@ import {
 import { buildReef } from './reef.js';
 import { Clownfish } from './fish.js';
 import { FoodSystem } from './food.js';
+import { AquariumSound } from './sound.js';
 import { loadState, saveState, simulate, catchUp, dayCount, careMessages, formatAway, RATES, stageName, welcomeNewFish } from './state.js';
 
-export const APP = { name: '俺の水族館', version: '0.6.0' };
+export const APP = { name: '俺の水族館', version: '0.7.0' };
 
 const QUALITY = {
   low: { label: '軽量', dpr: 1, shadows: false, shadowSize: 0, bloom: false, particles: 120, coral: 0.55 },
@@ -172,6 +173,7 @@ async function init() {
   function feed(x, y, z) {
     if (!state.fish.alive) return;
     food.drop(x, y, z, 10);
+    sound.plop();
     showToast(fish.hunger > 0.95 ? 'おなかいっぱいみたい' : 'エサをあげました');
     hideHint();
   }
@@ -191,6 +193,17 @@ async function init() {
     const x = world.anemonePos.x + 0.4 + (Math.random() - 0.5) * 0.8, z = world.anemonePos.z + 0.3;
     feed(x, THREE.MathUtils.clamp(visibleTop(x, z), world.anemonePos.y + 1.0, WATER_TOP - 0.2), z);
   }
+
+  // ---- sound ----
+  const sound = new AquariumSound();
+  food.onEat = () => sound.eat();
+  const unlock = () => sound.start();
+  document.addEventListener('pointerup', unlock);
+  document.addEventListener('touchend', unlock);
+  const soundBtn = document.getElementById('btn-sound');
+  const soundLabel = () => { soundBtn.textContent = sound.enabled ? '音：オン' : '音：オフ'; };
+  soundLabel();
+  soundBtn.addEventListener('click', () => { sound.setEnabled(!sound.enabled); soundLabel(); });
 
   // ---- quality ----
   const qBtn = document.getElementById('btn-quality');
@@ -244,6 +257,7 @@ async function init() {
     lastWater = now;
     if (state.tank.dirt < 0.08) { showToast('水はきれいです'); return; }
     cleaning = Math.min(state.tank.dirt, 0.6);
+    sound.waterChange();
     showToast('水換えをしました');
     hideHint();
   };
@@ -357,7 +371,7 @@ async function init() {
   let running = true;
   document.addEventListener('visibilitychange', () => {
     running = !document.hidden;
-    if (running) { clock.getDelta(); resumeFromBackground(); } else saveState(state);
+    if (running) { clock.getDelta(); resumeFromBackground(); sound.resume(); } else { saveState(state); sound.suspend(); }
   });
   let hudT = 0;
   function loop() {

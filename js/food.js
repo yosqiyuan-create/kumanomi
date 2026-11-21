@@ -31,7 +31,7 @@ export class FoodSystem {
     }
   }
 
-  eat(p) { p.alive = false; }
+  eat(p) { p.alive = false; if (this.onEat) this.onEat(); }
 
   update(dt, t) {
     for (const p of this.pellets) {
