@@ -18,7 +18,7 @@ const R_TANK = 2.6, Y_MIN = 0.7, Y_MAX = 5.6;
 // ---------- bell ----------
 function bellGeometry(height, flare) {
   const pts = [];
-  const N = 26;
+  const N = 34;
   for (let i = 0; i < N; i++) {
     const t = i / (N - 1);
     const th = t * (Math.PI / 2) * flare;
@@ -28,24 +28,29 @@ function bellGeometry(height, flare) {
   const last = pts[pts.length - 1];
   pts.push(new THREE.Vector2(last.x * 0.985, last.y - 0.035));
   pts.push(new THREE.Vector2(last.x * 0.94, last.y - 0.045));
-  const g = new THREE.LatheGeometry(pts, 48);
+  const g = new THREE.LatheGeometry(pts, 96);
   g.computeVertexNormals();
   return g;
 }
 
 const BELL_VS = /* glsl */`
-uniform float uTime; uniform float uPulse; uniform float uContract;
+uniform float uTime; uniform float uPulse; uniform float uPhase; uniform float uContract; uniform float uLobes;
 varying vec3 vN; varying vec3 vView; varying vec3 vLocal; varying float vT;
 #include <common>
 #include <fog_pars_vertex>
+float pf(float ph){ ph = fract(ph); return ph < 0.28 ? sin(ph / 0.28 * 1.5708) : 1.0 - smoothstep(0.28, 1.0, ph); }
 void main(){
   float t = uv.y;
   vec3 p = position;
   float k = smoothstep(0.1, 1.0, t);
-  p.xz *= 1.0 - uContract * uPulse * k;
-  p.y *= 1.0 + 0.7 * uContract * uPulse;
+  float c = pf(uPhase - t * 0.18);             // contraction wave runs from the top to the margin
   float ang = atan(p.z, p.x);
-  p.y += 0.012 * sin(ang * 8.0 + uTime * 2.0) * k * k;
+  // eight shallow lobes with small notches at the margin
+  float lobe = 1.0 - pow(abs(sin(ang * uLobes * 0.5)), 6.0);
+  p.xz *= 1.0 - 0.035 * (1.0 - lobe) * k * k * k;
+  p.xz *= 1.0 - uContract * c * k;
+  p.y *= 1.0 + 0.7 * uContract * c;
+  p.y += 0.012 * sin(ang * 8.0 + uTime * 2.0) * k * k + 0.02 * c * k * k * k;
   vLocal = position; vT = t;
   vec4 mvPosition = modelViewMatrix * vec4(p, 1.0);
   vView = -mvPosition.xyz;
@@ -64,18 +69,37 @@ void main(){
   float fres = pow(1.0 - abs(dot(normalize(vN), normalize(vView))), 2.2);
   vec3 col = uColor; float a = uOpacity;
   vec2 q = vLocal.xz;
-  if (uPattern == 1) {            // Aurelia: four horseshoe rings + radial canals
-    float m = 0.0;
+  if (uPattern == 1) {            // Aurelia aurita
+    float r = length(q);
+    float ang = atan(q.y, q.x);
+    // four horseshoe-shaped gonads, open side toward the centre
+    float m = 0.0, pouch = 0.0;
     for (int k = 0; k < 4; k++) {
       float an = float(k) * 1.5708 + 0.7854;
-      vec2 c = vec2(cos(an), sin(an)) * 0.3;
-      float d = abs(length(q - c) - 0.12);
-      m = max(m, smoothstep(0.05, 0.015, d));
+      vec2 c = vec2(cos(an), sin(an)) * 0.29;
+      vec2 d = q - c;
+      float rr = length(d);
+      float band = smoothstep(0.07, 0.015, abs(rr - 0.105));
+      float facing = dot(normalize(d + 1e-5), -normalize(c));      // 1 = toward centre
+      band *= smoothstep(0.9, 0.5, facing);                        // gap -> horseshoe
+      band *= 0.7 + 0.3 * sin(atan(d.y, d.x) * 16.0 + rr * 60.0);  // folded, frilly tissue
+      m = max(m, band);
+      pouch = max(pouch, smoothstep(0.12, 0.05, rr) * 0.35);
     }
-    m *= 1.0 - smoothstep(0.35, 0.6, vT);
-    col = mix(col, uPat, m); a += m * 0.55;
-    float ang = atan(q.y, q.x);
-    a += smoothstep(0.985, 1.0, abs(cos(ang * 8.0))) * smoothstep(0.25, 0.8, vT) * 0.18;
+    m *= 1.0 - smoothstep(0.32, 0.55, vT);
+    // branching radial canals + ring canal
+    float wob = sin(r * 22.0 + ang * 3.0) * 0.015;
+    float c8 = smoothstep(0.965, 1.0, abs(cos((ang + wob) * 8.0)));
+    float c16 = smoothstep(0.975, 1.0, abs(cos((ang + wob) * 16.0 + 1.5708))) * smoothstep(0.5, 0.75, r);
+    float canals = max(c8, c16) * smoothstep(0.38, 0.6, r);
+    float ring = smoothstep(0.025, 0.0, abs(vT - 0.93));
+    col = mix(col, uPat, m * 0.8);
+    col = mix(col, uPat * 0.9 + 0.1, pouch * 0.6);
+    float top = 1.0 - smoothstep(0.55, 0.95, vT);                 // canals show mainly from above
+    a += m * 0.32 + pouch * 0.08 + (canals * 0.12 * top + ring * 0.22) * (1.0 - m);
+    col += vec3(0.5) * (canals * 0.18 * top + ring * 0.35);
+    // soft milky thickness that varies across the jelly
+    a += 0.05 * sin(q.x * 17.0) * sin(q.y * 15.0);
   } else if (uPattern == 2) {     // Mastigias: white spots
     vec3 sp = vLocal * 6.0;
     vec3 cell = floor(sp); vec3 f = fract(sp) - 0.5;
@@ -137,7 +161,7 @@ class Population {
       vertexShader: BELL_VS, fragmentShader: BELL_FS,
       transparent: true, depthWrite: false, side: THREE.DoubleSide, fog: true,
       uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, {
-        uTime: { value: 0 }, uPulse: { value: 0 }, uContract: { value: cfg.pulse.contract },
+        uTime: { value: 0 }, uPulse: { value: 0 }, uPhase: { value: 0 }, uContract: { value: cfg.pulse.contract }, uLobes: { value: cfg.bell.lobes || 0 },
         uColor: { value: new THREE.Color(bc.color) }, uPat: { value: new THREE.Color(bc.patternColor) },
         uRim: { value: rimColor.clone() }, uOpacity: { value: bc.opacity }, uRimStr: { value: bc.rim },
         uPattern: { value: bc.pattern === 'rings' ? 1 : bc.pattern === 'spots' ? 2 : 0 },
@@ -153,9 +177,23 @@ class Population {
       mesh.renderOrder = 3;
       mesh.scale.setScalar(R);
       this.group.add(mesh);
+      let inner = null;
+      if (bc.inner) {
+        const im = mat.clone();
+        im.uniforms.uTime = shared.uTime;
+        im.uniforms.uOpacity.value = bc.opacity * bc.inner;
+        im.uniforms.uPattern.value = 0;
+        im.uniforms.uRimStr.value = bc.rim * 0.5;
+        im.uniforms.uRim.value = rimColor.clone();
+        inner = new THREE.Mesh(geo, im);
+        inner.scale.set(0.9, 0.8, 0.9);
+        inner.position.y = -0.03;
+        inner.renderOrder = 2;
+        mesh.add(inner);
+      }
       const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * R_TANK * 0.85;
       const j = {
-        mesh, R, mat,
+        mesh, R, mat, inner,
         pos: new THREE.Vector3(Math.cos(a) * r, rnd(Y_MIN + 0.5, Y_MAX - 0.5), Math.sin(a) * r),
         vel: new THREE.Vector3(),
         up: new THREE.Vector3(rnd(-0.3, 0.3), 1, rnd(-0.3, 0.3)).normalize(),
@@ -186,17 +224,74 @@ class Population {
       const tc = cfg.tentacles;
       const nSeg = cfg.count * tc.count * (tc.segments - 1);
       this.linePos = new Float32Array(nSeg * 2 * 3);
+      const lcol = new Float32Array(nSeg * 2 * 3);
+      let w = 0;
+      for (let j = 0; j < cfg.count; j++) for (let k = 0; k < tc.count; k++) {
+        const bright = 0.6 + 0.4 * Math.random();
+        for (let sgi = 1; sgi < tc.segments; sgi++) {
+          for (const e of [sgi - 1, sgi]) {
+            const f = bright * Math.pow(1 - e / (tc.segments - 1), 1.3);
+            lcol[w++] = f; lcol[w++] = f; lcol[w++] = f;
+          }
+        }
+      }
       const lg = new THREE.BufferGeometry();
       lg.setAttribute('position', new THREE.BufferAttribute(this.linePos, 3).setUsage(THREE.DynamicDrawUsage));
-      this.lineMat = new THREE.LineBasicMaterial({ color: new THREE.Color(tc.color), transparent: true, opacity: tc.opacity, depthWrite: false, blending: THREE.AdditiveBlending, fog: true });
+      lg.setAttribute('color', new THREE.BufferAttribute(lcol, 3));
+      this.lineMat = new THREE.LineBasicMaterial({ color: new THREE.Color(tc.color), vertexColors: true, transparent: true, opacity: tc.opacity, depthWrite: false, blending: THREE.AdditiveBlending, fog: true });
       this.lines = new THREE.LineSegments(lg, this.lineMat);
       this.lines.frustumCulled = false;
       this.lines.renderOrder = 1;
       scene.add(this.lines);
     }
 
-    // oral arms: ellipsoid beads along each chain (+ clubs at the tips)
+    // oral arms
     const ac = cfg.arms;
+    if (ac.style === 'ribbon') this._buildRibbons(scene);
+    else this._buildBeads(scene);
+    this._m = new THREE.Matrix4(); this._q = new THREE.Quaternion(); this._s = new THREE.Vector3();
+    this._v = new THREE.Vector3(); this._d = new THREE.Vector3(); this._flow = new THREE.Vector3();
+    this._t1 = new THREE.Vector3(); this._t2 = new THREE.Vector3(); this._rad = new THREE.Vector3();
+  }
+
+  // frilled, translucent ribbons: two crossed strips per arm
+  _buildRibbons(scene) {
+    const cfg = this.cfg, ac = cfg.arms;
+    const n = ac.segments;
+    const strips = cfg.count * ac.count * 2;
+    const vPer = n * 2;
+    this.ribPos = new Float32Array(strips * vPer * 3);
+    const col = new Float32Array(strips * vPer * 4);
+    const idx = [];
+    const base = new THREE.Color(ac.color);
+    for (let st = 0; st < strips; st++) {
+      for (let i = 0; i < n; i++) {
+        const f = i / (n - 1);
+        for (let e = 0; e < 2; e++) {
+          const k = (st * vPer + i * 2 + e) * 4;
+          const edge = 0.75;                                  // frilled edges are whiter
+          col[k] = base.r * edge + 0.25; col[k + 1] = base.g * edge + 0.25; col[k + 2] = base.b * edge + 0.25;
+          col[k + 3] = ac.opacity * (1 - f * 0.75) * (i === 0 ? 0.3 : 1);
+        }
+        if (i < n - 1) {
+          const a = st * vPer + i * 2;
+          idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
+        }
+      }
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(this.ribPos, 3).setUsage(THREE.DynamicDrawUsage));
+    g.setAttribute('color', new THREE.BufferAttribute(col, 4));
+    g.setIndex(idx);
+    this.ribMat = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, side: THREE.DoubleSide, depthWrite: false, fog: true });
+    this.ribbons = new THREE.Mesh(g, this.ribMat);
+    this.ribbons.frustumCulled = false;
+    this.ribbons.renderOrder = 1;
+    scene.add(this.ribbons);
+  }
+
+  _buildBeads(scene) {
+    const cfg = this.cfg, ac = cfg.arms;
     const beads = cfg.count * ac.count * (ac.segments - 1);
     const armMat = new THREE.MeshStandardMaterial({
       color: '#ffffff', roughness: 0.5, transparent: ac.opacity < 1, opacity: ac.opacity,
@@ -220,20 +315,19 @@ class Population {
       this.clubMesh.frustumCulled = false;
       scene.add(this.clubMesh);
     }
-    this._m = new THREE.Matrix4(); this._q = new THREE.Quaternion(); this._s = new THREE.Vector3();
-    this._v = new THREE.Vector3(); this._d = new THREE.Vector3(); this._flow = new THREE.Vector3();
   }
 
   setRim(color) {
-    for (const j of this.jellies) j.mat.uniforms.uRim.value.copy(color);
+    for (const j of this.jellies) { j.mat.uniforms.uRim.value.copy(color); if (j.inner) j.inner.material.uniforms.uRim.value.copy(color); }
     if (this.lineMat && this.cfg.id === 'mizukurage') this.lineMat.color.copy(color).lerp(new THREE.Color('#ffffff'), 0.5);
   }
 
   dispose(scene) {
     scene.remove(this.group);
-    for (const j of this.jellies) j.mat.dispose();
+    for (const j of this.jellies) { j.mat.dispose(); if (j.inner) j.inner.material.dispose(); }
     if (this.lines) { scene.remove(this.lines); this.lines.geometry.dispose(); this.lineMat.dispose(); }
-    scene.remove(this.armMesh); this.armMesh.dispose();
+    if (this.armMesh) { scene.remove(this.armMesh); this.armMesh.dispose(); }
+    if (this.ribbons) { scene.remove(this.ribbons); this.ribbons.geometry.dispose(); this.ribMat.dispose(); }
     if (this.clubMesh) { scene.remove(this.clubMesh); this.clubMesh.dispose(); }
   }
 
@@ -253,6 +347,8 @@ class Population {
       const p = j.phase;
       j.pulse = p < 0.28 ? Math.sin(p / 0.28 * Math.PI / 2) : 1 - THREE.MathUtils.smoothstep(p, 0.28, 1.0);
       j.mat.uniforms.uPulse.value = j.pulse;
+      j.mat.uniforms.uPhase.value = j.phase;
+      if (j.inner) { j.inner.material.uniforms.uPulse.value = j.pulse; j.inner.material.uniforms.uPhase.value = j.phase; }
 
       // gentle circular current + keep inside the tank
       const rr = Math.hypot(j.pos.x, j.pos.z);
@@ -296,6 +392,28 @@ class Population {
         v.set(Math.cos(ang) * 0.12, cfg.bell.height * 0.1, Math.sin(ang) * 0.12).applyMatrix4(j.mesh.matrixWorld);
         const ch = j.arms[k];
         ch.update(v, dt, 0.5, 0.9, flow);
+        if (this.ribbons) {
+          const rad = this._rad.set(Math.cos(ang), 0, Math.sin(ang)).applyQuaternion(j.mesh.quaternion);
+          for (let s2 = 0; s2 < ch.n; s2++) {
+            const a = ch.p[s2], b = ch.p[Math.min(ch.n - 1, s2 + 1)], a0 = ch.p[Math.max(0, s2 - 1)];
+            d.subVectors(b, a0).normalize();
+            const t1 = this._t1.copy(rad).addScaledVector(d, -rad.dot(d)).normalize();
+            const t2 = this._t2.crossVectors(d, t1).normalize();
+            const f = s2 / (ch.n - 1);
+            const w = R * ac.radius[0] * (1 - f * 0.55) * (1 + 0.45 * Math.sin(f * 13 + t * 1.7 + k * 2.1)) * (s2 === 0 ? 0.4 : 1);
+            const wob = R * 0.02 * Math.sin(f * 9 + t * 2.3 + k);
+            for (let st = 0; st < 2; st++) {
+              const side = st === 0 ? t1 : t2;
+              const ww = st === 0 ? w : w * 0.7;
+              const o = ((((this.jellies.indexOf(j) * ac.count) + k) * 2 + st) * ch.n * 2 + s2 * 2) * 3;
+              const P = this.ribPos;
+              const ox = d.x * wob, oy = d.y * wob, oz = d.z * wob;
+              P[o] = a.x + side.x * ww + ox; P[o + 1] = a.y + side.y * ww + oy; P[o + 2] = a.z + side.z * ww + oz;
+              P[o + 3] = a.x - side.x * ww - ox; P[o + 4] = a.y - side.y * ww - oy; P[o + 5] = a.z - side.z * ww - oz;
+            }
+          }
+          continue;
+        }
         for (let s = 1; s < ch.n; s++) {
           const a = ch.p[s - 1], b = ch.p[s];
           d.subVectors(b, a);
@@ -316,8 +434,11 @@ class Population {
       }
     }
     if (this.lines) this.lines.geometry.attributes.position.needsUpdate = true;
-    this.armMesh.instanceMatrix.needsUpdate = true;
-    if (this.armMesh.instanceColor) this.armMesh.instanceColor.needsUpdate = true;
+    if (this.armMesh) {
+      this.armMesh.instanceMatrix.needsUpdate = true;
+      if (this.armMesh.instanceColor) this.armMesh.instanceColor.needsUpdate = true;
+    }
+    if (this.ribbons) this.ribbons.geometry.attributes.position.needsUpdate = true;
     if (this.clubMesh) this.clubMesh.instanceMatrix.needsUpdate = true;
   }
 }
