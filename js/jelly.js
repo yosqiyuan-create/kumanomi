@@ -254,28 +254,30 @@ class Population {
     this._t1 = new THREE.Vector3(); this._t2 = new THREE.Vector3(); this._rad = new THREE.Vector3();
   }
 
-  // frilled, translucent ribbons: two crossed strips per arm
+  // Aurelia oral arms: long, folded (gutter-shaped) curtains with densely ruffled, whitish edges
   _buildRibbons(scene) {
     const cfg = this.cfg, ac = cfg.arms;
-    const n = ac.segments;
-    const strips = cfg.count * ac.count * 2;
-    const vPer = n * 2;
-    this.ribPos = new Float32Array(strips * vPer * 3);
-    const col = new Float32Array(strips * vPer * 4);
+    this.ROWS = 44; this.COLS = 9;
+    const arms = cfg.count * ac.count;
+    const vPer = this.ROWS * this.COLS;
+    this.ribPos = new Float32Array(arms * vPer * 3);
+    const col = new Float32Array(arms * vPer * 4);
     const idx = [];
     const base = new THREE.Color(ac.color);
-    for (let st = 0; st < strips; st++) {
-      for (let i = 0; i < n; i++) {
-        const f = i / (n - 1);
-        for (let e = 0; e < 2; e++) {
-          const k = (st * vPer + i * 2 + e) * 4;
-          const edge = 0.75;                                  // frilled edges are whiter
-          col[k] = base.r * edge + 0.25; col[k + 1] = base.g * edge + 0.25; col[k + 2] = base.b * edge + 0.25;
-          col[k + 3] = ac.opacity * (1 - f * 0.75) * (i === 0 ? 0.3 : 1);
-        }
-        if (i < n - 1) {
-          const a = st * vPer + i * 2;
-          idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
+    for (let a = 0; a < arms; a++) {
+      for (let r = 0; r < this.ROWS; r++) {
+        const f = r / (this.ROWS - 1);
+        for (let c = 0; c < this.COLS; c++) {
+          const u = c / (this.COLS - 1) * 2 - 1;          // -1 .. 1 across the arm
+          const edge = Math.pow(Math.abs(u), 3);           // 0 middle, 1 at the frilled edges
+          const k = (a * vPer + r * this.COLS + c) * 4;
+          const wv = 0.55 + 0.45 * edge;
+          col[k] = base.r * wv + 0.2 * edge; col[k + 1] = base.g * wv + 0.2 * edge; col[k + 2] = base.b * wv + 0.2 * edge;
+          col[k + 3] = ac.opacity * (0.18 + 0.82 * edge) * (1 - Math.pow(f, 2.2) * 0.85) * Math.min(1, r / 2 + 0.3);
+          if (r < this.ROWS - 1 && c < this.COLS - 1) {
+            const i0 = a * vPer + r * this.COLS + c;
+            idx.push(i0, i0 + this.COLS, i0 + 1, i0 + 1, i0 + this.COLS, i0 + this.COLS + 1);
+          }
         }
       }
     }
@@ -288,6 +290,7 @@ class Population {
     this.ribbons.frustumCulled = false;
     this.ribbons.renderOrder = 1;
     scene.add(this.ribbons);
+    this._cp = new THREE.Vector3(); this._cq = new THREE.Vector3();
   }
 
   _buildBeads(scene) {
@@ -389,27 +392,43 @@ class Population {
       // oral arms
       for (let k = 0; k < j.arms.length; k++) {
         const ang = k / j.arms.length * Math.PI * 2 + 0.4;
-        v.set(Math.cos(ang) * 0.12, cfg.bell.height * 0.1, Math.sin(ang) * 0.12).applyMatrix4(j.mesh.matrixWorld);
+        const rootR = this.ribbons ? 0.17 : 0.12;
+        v.set(Math.cos(ang) * rootR, cfg.bell.height * 0.1, Math.sin(ang) * rootR).applyMatrix4(j.mesh.matrixWorld);
         const ch = j.arms[k];
-        ch.update(v, dt, 0.5, 0.9, flow);
+        if (this.ribbons) {
+          this._rad.set(Math.cos(ang), 0, Math.sin(ang)).applyQuaternion(j.mesh.quaternion);
+          this._t2.copy(flow).addScaledVector(this._rad, 0.05);
+          ch.update(v, dt, 0.45, 0.88, this._t2);
+        } else ch.update(v, dt, 0.5, 0.9, flow);
         if (this.ribbons) {
           const rad = this._rad.set(Math.cos(ang), 0, Math.sin(ang)).applyQuaternion(j.mesh.quaternion);
-          for (let s2 = 0; s2 < ch.n; s2++) {
-            const a = ch.p[s2], b = ch.p[Math.min(ch.n - 1, s2 + 1)], a0 = ch.p[Math.max(0, s2 - 1)];
-            d.subVectors(b, a0).normalize();
-            const t1 = this._t1.copy(rad).addScaledVector(d, -rad.dot(d)).normalize();
-            const t2 = this._t2.crossVectors(d, t1).normalize();
-            const f = s2 / (ch.n - 1);
-            const w = R * ac.radius[0] * (1 - f * 0.55) * (1 + 0.45 * Math.sin(f * 13 + t * 1.7 + k * 2.1)) * (s2 === 0 ? 0.4 : 1);
-            const wob = R * 0.02 * Math.sin(f * 9 + t * 2.3 + k);
-            for (let st = 0; st < 2; st++) {
-              const side = st === 0 ? t1 : t2;
-              const ww = st === 0 ? w : w * 0.7;
-              const o = ((((this.jellies.indexOf(j) * ac.count) + k) * 2 + st) * ch.n * 2 + s2 * 2) * 3;
-              const P = this.ribPos;
-              const ox = d.x * wob, oy = d.y * wob, oz = d.z * wob;
-              P[o] = a.x + side.x * ww + ox; P[o + 1] = a.y + side.y * ww + oy; P[o + 2] = a.z + side.z * ww + oz;
-              P[o + 3] = a.x - side.x * ww - ox; P[o + 4] = a.y - side.y * ww - oy; P[o + 5] = a.z - side.z * ww - oz;
+          const P = this.ribPos, ROWS = this.ROWS, COLS = this.COLS;
+          const armIdx = this.jellies.indexOf(j) * ac.count + k;
+          const len = ac.length * R;
+          const cp = this._cp, cq = this._cq;
+          for (let r = 0; r < ROWS; r++) {
+            const f = r / (ROWS - 1);
+            // smooth point along the chain
+            const fi = f * (ch.n - 1), i0 = Math.min(ch.n - 2, Math.floor(fi)), w0 = fi - i0;
+            cp.lerpVectors(ch.p[i0], ch.p[i0 + 1], w0);
+            d.subVectors(ch.p[i0 + 1], ch.p[i0]).normalize();
+            const t1 = this._t1.copy(rad).addScaledVector(d, -rad.dot(d)).normalize();   // across the arm
+            const t2 = this._t2.crossVectors(d, t1).normalize();                         // depth of the fold
+            const width = R * ac.radius[0] * (1.15 - 0.8 * f) * (1 + 0.12 * Math.sin(f * 5 + t * 0.7 + k));
+            const sway = R * 0.04 * Math.sin(f * 4 + t * 0.9 + k * 1.7) * f;
+            for (let c = 0; c < COLS; c++) {
+              const u = c / (COLS - 1) * 2 - 1;
+              const au = Math.abs(u);
+              // gutter-shaped fold, and many small ruffles along both edges
+              const fold = (u * u - 0.35) * width * 0.55;
+              const ruf = Math.pow(au, 2.5) * width * 0.38 * Math.sin(f * len / R * 34 + u * 2 + t * 1.3 + k * 3);
+              const ruf2 = Math.pow(au, 3) * width * 0.18 * Math.sin(f * len / R * 71 - t * 0.8 + k);
+              cq.copy(cp)
+                .addScaledVector(t1, u * width + sway)
+                .addScaledVector(t2, fold + ruf + ruf2)
+                .addScaledVector(d, ruf * 0.25);
+              const o = ((armIdx * ROWS + r) * COLS + c) * 3;
+              P[o] = cq.x; P[o + 1] = cq.y; P[o + 2] = cq.z;
             }
           }
           continue;

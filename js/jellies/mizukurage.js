@@ -9,6 +9,6 @@ export default {
   pulse: { period: [1.7, 2.3], contract: 0.2, thrust: 0.32 },
   sink: 0.045,
   tentacles: { count: 150, segments: 6, length: 0.2, color: '#f4f8ff', opacity: 0.32 },
-  arms: { count: 4, segments: 12, length: 1.0, radius: [0.075, 0.03], color: '#f3e4ff', opacity: 0.42, club: false, style: 'ribbon' },
+  arms: { count: 4, segments: 12, length: 1.1, radius: [0.15, 0.04], color: '#f1e6fb', opacity: 0.6, club: false, style: 'ribbon' },
   lights: ['blue', 'purple', 'rainbow', 'white'],
 };
