@@ -133,7 +133,7 @@ class Chain {
       this.p.push(v); this.o.push(v.clone());
     }
   }
-  update(root, dt, gravity, drag, flow) {
+  update(root, dt, gravity, drag, flow, restDir = null, stiff = 0) {
     this.p[0].copy(root); this.o[0].copy(root);
     const g = gravity * dt * dt;
     for (let i = 1; i < this.n; i++) {
@@ -151,6 +151,29 @@ class Chain {
         b.x = a.x + dx * k; b.y = a.y + dy * k; b.z = a.z + dz * k;
       }
     }
+    // gently pull back toward the natural hanging shape (keeps arms from sticking out sideways)
+    if (restDir && stiff > 0) {
+      const k = 1 - Math.exp(-dt * stiff);
+      for (let i = 1; i < this.n; i++) {
+        const p = this.p[i];
+        p.x += (root.x + restDir.x * this.seg * i - p.x) * k;
+        p.y += (root.y + restDir.y * this.seg * i - p.y) * k;
+        p.z += (root.z + restDir.z * this.seg * i - p.z) * k;
+      }
+    }
+  }
+
+  // smooth point and tangent at f (0..1) along the chain (Catmull-Rom)
+  sample(f, outP, outT) {
+    const n = this.n, x = f * (n - 1);
+    const i = Math.min(n - 2, Math.floor(x)), t = x - i;
+    const p0 = this.p[Math.max(0, i - 1)], p1 = this.p[i], p2 = this.p[i + 1], p3 = this.p[Math.min(n - 1, i + 2)];
+    const t2 = t * t, t3 = t2 * t;
+    for (const c of ['x', 'y', 'z']) {
+      outP[c] = 0.5 * ((2 * p1[c]) + (-p0[c] + p2[c]) * t + (2 * p0[c] - 5 * p1[c] + 4 * p2[c] - p3[c]) * t2 + (-p0[c] + 3 * p1[c] - 3 * p2[c] + p3[c]) * t3);
+      outT[c] = 0.5 * ((-p0[c] + p2[c]) + 2 * (2 * p0[c] - 5 * p1[c] + 4 * p2[c] - p3[c]) * t + 3 * (-p0[c] + 3 * p1[c] - 3 * p2[c] + p3[c]) * t2);
+    }
+    outT.normalize();
   }
 }
 
@@ -234,7 +257,7 @@ class Population {
       // oral arms from under the bell
       j.arms = [];
       const ac = cfg.arms;
-      for (let k = 0; k < ac.count; k++) j.arms.push(new Chain(ac.segments, ac.length * R / ac.segments * 1.7, j.pos));
+      for (let k = 0; k < ac.count; k++) j.arms.push(new Chain(ac.segments, ac.length * R / ac.segments * (ac.style === 'ribbon' ? 1.0 : 1.7), j.pos));
       this.jellies.push(j);
     }
 
@@ -276,23 +299,27 @@ class Population {
   // Aurelia oral arms: long, folded (gutter-shaped) curtains with densely ruffled, whitish edges
   _buildRibbons(scene) {
     const cfg = this.cfg, ac = cfg.arms;
-    this.ROWS = 44; this.COLS = 9;
+    this.ROWS = 90; this.COLS = 11;
     const arms = cfg.count * ac.count;
     const vPer = this.ROWS * this.COLS;
     this.ribPos = new Float32Array(arms * vPer * 3);
     const col = new Float32Array(arms * vPer * 4);
     const idx = [];
     const base = new THREE.Color(ac.color);
+    const cream = new THREE.Color(ac.frill || '#fff0d0');
     for (let a = 0; a < arms; a++) {
       for (let r = 0; r < this.ROWS; r++) {
         const f = r / (this.ROWS - 1);
         for (let c = 0; c < this.COLS; c++) {
           const u = c / (this.COLS - 1) * 2 - 1;          // -1 .. 1 across the arm
-          const edge = Math.pow(Math.abs(u), 3);           // 0 middle, 1 at the frilled edges
+          const edge = Math.pow(Math.abs(u), 4);           // 0 middle, 1 at the edges
+          const frillEdge = u > 0 ? Math.pow(u, 3) * (1 - 0.6 * f) : 0;   // one edge carries the creamy frills
           const k = (a * vPer + r * this.COLS + c) * 4;
-          const wv = 0.55 + 0.45 * edge;
-          col[k] = base.r * wv + 0.2 * edge; col[k + 1] = base.g * wv + 0.2 * edge; col[k + 2] = base.b * wv + 0.2 * edge;
-          col[k + 3] = ac.opacity * (0.18 + 0.82 * edge) * (1 - Math.pow(f, 2.2) * 0.85) * Math.min(1, r / 2 + 0.3);
+          const wv = 0.75 + 0.25 * edge;
+          col[k] = base.r * wv + (cream.r - base.r * wv) * frillEdge;
+          col[k + 1] = base.g * wv + (cream.g - base.g * wv) * frillEdge;
+          col[k + 2] = base.b * wv + (cream.b - base.b * wv) * frillEdge;
+          col[k + 3] = ac.opacity * (0.32 + 0.45 * edge + 0.4 * frillEdge) * (1 - Math.pow(f, 3) * 0.6) * Math.min(1, r / 6 + 0.25);
           if (r < this.ROWS - 1 && c < this.COLS - 1) {
             const i0 = a * vPer + r * this.COLS + c;
             idx.push(i0, i0 + this.COLS, i0 + 1, i0 + 1, i0 + this.COLS, i0 + this.COLS + 1);
@@ -416,8 +443,8 @@ class Population {
         const ch = j.arms[k];
         if (this.ribbons) {
           this._rad.set(Math.cos(ang), 0, Math.sin(ang)).applyQuaternion(j.mesh.quaternion);
-          this._t2.copy(flow).addScaledVector(this._rad, 0.05);
-          ch.update(v, dt, 0.45, 0.88, this._t2);
+          const rest = this._t2.copy(j.up).multiplyScalar(-1).addScaledVector(this._rad, 0.22).normalize();
+          ch.update(v, dt, 0.3, 0.86, flow, rest, 2.2);
         } else ch.update(v, dt, 0.5, 0.9, flow);
         if (this.ribbons) {
           const rad = this._rad.set(Math.cos(ang), 0, Math.sin(ang)).applyQuaternion(j.mesh.quaternion);
@@ -427,25 +454,26 @@ class Population {
           const cp = this._cp, cq = this._cq;
           for (let r = 0; r < ROWS; r++) {
             const f = r / (ROWS - 1);
-            // smooth point along the chain
-            const fi = f * (ch.n - 1), i0 = Math.min(ch.n - 2, Math.floor(fi)), w0 = fi - i0;
-            cp.lerpVectors(ch.p[i0], ch.p[i0 + 1], w0);
-            d.subVectors(ch.p[i0 + 1], ch.p[i0]).normalize();
+            ch.sample(f, cp, d);                                                         // smooth centre line + tangent
             const t1 = this._t1.copy(rad).addScaledVector(d, -rad.dot(d)).normalize();   // across the arm
             const t2 = this._t2.crossVectors(d, t1).normalize();                         // depth of the fold
-            const width = R * ac.radius[0] * (1.15 - 0.8 * f) * (1 + 0.12 * Math.sin(f * 5 + t * 0.7 + k));
-            const sway = R * 0.04 * Math.sin(f * 4 + t * 0.9 + k * 1.7) * f;
+            // wide, frilly base -> narrow ribbon -> rounded tip (like the photo)
+            const tipRound = f > 0.92 ? Math.sqrt(Math.max(0, 1 - (f - 0.92) / 0.08)) : 1;
+            const width = R * (ac.radius[0] * Math.pow(1 - f, 1.4) + ac.radius[1]) * tipRound * (1 + 0.08 * Math.sin(f * 4 + t * 0.6 + k));
+            const sway = R * 0.13 * Math.sin(f * 5.5 + t * 0.6 + k * 1.7) * f;   // gentle S-shaped wave
             for (let c = 0; c < COLS; c++) {
               const u = c / (COLS - 1) * 2 - 1;
               const au = Math.abs(u);
-              // gutter-shaped fold, and many small ruffles along both edges
-              const fold = (u * u - 0.35) * width * 0.55;
-              const ruf = Math.pow(au, 2.5) * width * 0.38 * Math.sin(f * len / R * 34 + u * 2 + t * 1.3 + k * 3);
-              const ruf2 = Math.pow(au, 3) * width * 0.18 * Math.sin(f * len / R * 71 - t * 0.8 + k);
+              const edge = THREE.MathUtils.smoothstep(au, 0.55, 1.0);
+              // soft gutter fold, and fine small frills only along the very edges
+              const fold = (u * u - 0.35) * width * 0.45;
+              const frillZone = 1 - THREE.MathUtils.smoothstep(f, 0.35, 0.8);    // ruffles mostly toward the base
+              const strong = u > 0 ? THREE.MathUtils.smoothstep(u, 0.3, 1.0) : edge * 0.4;
+              const ph = f * len / R * 26 + t * 0.9 + k * 3;
+              const ruf = strong * width * (0.05 + 0.2 * frillZone) * (Math.sin(ph) + 0.45 * Math.sin(ph * 1.9 + 1.3) + 0.25 * Math.sin(ph * 3.1 + 0.4));
               cq.copy(cp)
-                .addScaledVector(t1, u * width + sway)
-                .addScaledVector(t2, fold + ruf + ruf2)
-                .addScaledVector(d, ruf * 0.25);
+                .addScaledVector(t1, u * width + sway + ruf * 0.25)
+                .addScaledVector(t2, fold + ruf);
               const o = ((armIdx * ROWS + r) * COLS + c) * 3;
               P[o] = cq.x; P[o + 1] = cq.y; P[o + 2] = cq.z;
             }

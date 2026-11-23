@@ -20,7 +20,7 @@ import {
   feedNursery, moveFryToTank, releaseFry, nurseryInfo,
 } from './state.js';
 
-export const APP = { name: '俺の水族館', version: '0.13.0' };
+export const APP = { name: '俺の水族館', version: '0.13.3' };
 
 const QUALITY = {
   low: { label: '軽量', dpr: 1, shadows: false, shadowSize: 0, bloom: false, particles: 120, coral: 0.55 },
