@@ -60,7 +60,7 @@ void main(){
 }`;
 
 const BELL_FS = /* glsl */`
-uniform vec3 uColor; uniform vec3 uPat; uniform vec3 uRim; uniform float uOpacity; uniform float uRimStr; uniform int uPattern; uniform float uPulse;
+uniform vec3 uColor; uniform vec3 uPat; uniform vec3 uRim; uniform float uOpacity; uniform float uRimStr; uniform int uPattern; uniform float uPulse; uniform sampler2D uTex;
 varying vec3 vN; varying vec3 vView; varying vec3 vLocal; varying float vT;
 #include <common>
 #include <fog_pars_fragment>
@@ -100,6 +100,13 @@ void main(){
     col += vec3(0.5) * (canals * 0.18 * top + ring * 0.35);
     // soft milky thickness that varies across the jelly
     a += 0.05 * sin(q.x * 17.0) * sin(q.y * 15.0);
+  } else if (uPattern == 3) {     // real photo of the bell seen from above (luminance = jelly)
+    float lum = texture2D(uTex, q * 0.5 + 0.5).r;
+    float r = length(q);
+    float gon = smoothstep(0.5, 0.85, lum) * (1.0 - smoothstep(0.32, 0.6, r));
+    col = uColor * (0.35 + 1.1 * lum);
+    col = mix(col, uPat * (0.6 + 0.6 * lum), gon * 0.55);
+    a = uOpacity * 0.3 + pow(lum, 1.5) * 0.95;
   } else if (uPattern == 2) {     // Mastigias: white spots
     vec3 sp = vLocal * 6.0;
     vec3 cell = floor(sp); vec3 f = fract(sp) - 0.5;
@@ -148,6 +155,16 @@ class Chain {
 }
 
 const rnd = (a, b) => a + Math.random() * (b - a);
+const texCache = {};
+function loadTex(url) {
+  if (!texCache[url]) {
+    const t = new THREE.TextureLoader().load(url);
+    t.colorSpace = THREE.NoColorSpace;
+    t.anisotropy = 4;
+    texCache[url] = t;
+  }
+  return texCache[url];
+}
 
 // ---------- one species tank ----------
 class Population {
@@ -164,7 +181,8 @@ class Population {
         uTime: { value: 0 }, uPulse: { value: 0 }, uPhase: { value: 0 }, uContract: { value: cfg.pulse.contract }, uLobes: { value: cfg.bell.lobes || 0 },
         uColor: { value: new THREE.Color(bc.color) }, uPat: { value: new THREE.Color(bc.patternColor) },
         uRim: { value: rimColor.clone() }, uOpacity: { value: bc.opacity }, uRimStr: { value: bc.rim },
-        uPattern: { value: bc.pattern === 'rings' ? 1 : bc.pattern === 'spots' ? 2 : 0 },
+        uPattern: { value: bc.pattern === 'rings' ? 1 : bc.pattern === 'spots' ? 2 : bc.pattern === 'photo' ? 3 : 0 },
+        uTex: { value: null },
       }]),
     });
     this.jellies = [];
@@ -172,6 +190,7 @@ class Population {
       const R = rnd(cfg.size[0], cfg.size[1]);
       const mat = baseMat.clone();
       mat.uniforms.uTime = shared.uTime;
+      if (bc.texture) mat.uniforms.uTex.value = loadTex(bc.texture);
       mat.uniforms.uRim.value = rimColor.clone();
       const mesh = new THREE.Mesh(geo, mat);
       mesh.renderOrder = 3;
