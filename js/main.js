@@ -12,6 +12,7 @@ import { buildReef } from './reef.js';
 import { Clownfish } from './fish.js';
 import { FoodSystem } from './food.js';
 import { EggCluster } from './eggs.js';
+import { JellyTank, LIGHTS } from './jelly.js';
 import { AquariumSound, SOUND_LABEL } from './sound.js';
 import {
   loadState, saveState, simulate, catchUp, dayCount, careMessages, worstMessage, formatAway, RATES,
@@ -19,7 +20,7 @@ import {
   feedNursery, moveFryToTank, releaseFry, nurseryInfo,
 } from './state.js';
 
-export const APP = { name: '俺の水族館', version: '0.10.0' };
+export const APP = { name: '俺の水族館', version: '0.12.0' };
 
 const QUALITY = {
   low: { label: '軽量', dpr: 1, shadows: false, shadowSize: 0, bloom: false, particles: 120, coral: 0.55 },
@@ -137,6 +138,9 @@ async function init() {
   }
   placeCamera();
 
+  let mode = 'menu';   // 'menu' (main screen), 'reef' (clownfish tank) or 'jelly' (jellyfish tank)
+  let jelly = null;
+
   // post processing
   let composer = null;
   if (Q.bloom) {
@@ -156,6 +160,7 @@ async function init() {
     const s = h * renderer.getPixelRatio();
     particles.material.uniforms.uScale.value = s;
     scene.traverse((o) => { if (o.isPoints && o.material.uniforms?.uScale) o.material.uniforms.uScale.value = s; });
+    if (jelly) { jelly.setSize(w, h); jelly.scene.traverse((o) => { if (o.isPoints && o.material.uniforms?.uScale) o.material.uniforms.uScale.value = s; }); }
   }
   window.addEventListener('resize', resize);
   resize();
@@ -209,6 +214,7 @@ async function init() {
   renderer.domElement.addEventListener('pointerdown', (e) => { down = { x: e.clientX, y: e.clientY, t: performance.now() }; });
   renderer.domElement.addEventListener('pointerup', (e) => {
     if (!down) return;
+    if (mode === 'jelly') { jellySwipe(e); down = null; return; }
     const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y);
     const quick = performance.now() - down.t < 350;
     down = null;
@@ -279,7 +285,7 @@ async function init() {
 
   // ---- hint ----
   const hint = document.getElementById('hint');
-  let hintTimer = setTimeout(() => hideHint(), 9000);
+  let hintTimer = 0;
   function hideHint() { hint.classList.add('hide'); clearTimeout(hintTimer); }
 
   // ---- water change ----
@@ -374,7 +380,7 @@ async function init() {
     setTimeout(showNextDeath, delay);
   }
   function showNextDeath() {
-    if (deathShowing || !deathQueue.length) return;
+    if (deathShowing || !deathQueue.length || mode !== 'reef') return;
     const f = deathShowing = deathQueue.shift();
     if (follow) setFollow(false);
     const d = f.data;
@@ -486,6 +492,105 @@ async function init() {
     nyOpen = false; nyEl.classList.remove('show');
   });
 
+  // ---- jellyfish tank (viewing only) ----
+  const hudEl = document.getElementById('hud');
+  const jHud = document.getElementById('jelly-hud');
+  const jName = document.getElementById('j-name'), jNote = document.getElementById('j-note');
+  const jLightBtn = document.getElementById('j-light');
+  function renderJellyHud() {
+    const sp = jelly.species;
+    jName.textContent = sp.name;
+    jNote.textContent = sp.note;
+    jLightBtn.textContent = '照明：' + LIGHTS[jelly.lightKey].label;
+  }
+  function enterJelly() {
+    if (follow) setFollow(false);
+    if (!jelly) {
+      jelly = new JellyTank(renderer, Math.round(Q.particles * 0.8));
+      jelly.setSize(window.innerWidth, window.innerHeight);
+      jelly.resetCamera();
+      window.__reef.jelly = jelly;
+    }
+    mode = 'jelly';
+    controls.enabled = false;
+    jelly.controls.enabled = true;
+    hudEl.classList.remove('show');
+    menuEl.classList.remove('show');
+    jHud.classList.add('show');
+    renderJellyHud();
+    hideHint();
+  }
+  // ---- main screen (choose a tank) ----
+  const menuEl = document.getElementById('menu');
+  document.getElementById('m-ver').textContent = 'Version ' + APP.version;
+  function showMenu() {
+    if (follow) setFollow(false);
+    if (jelly) { jelly.controls.enabled = false; setViewing(false); }
+    mode = 'menu';
+    controls.enabled = false;
+    hudEl.classList.remove('show');
+    jHud.classList.remove('show');
+    nyOpen = false; nyEl.classList.remove('show');
+    updateMenu();
+    menuEl.classList.add('show');
+  }
+  function enterReef() {
+    mode = 'reef';
+    if (jelly) jelly.controls.enabled = false;
+    controls.enabled = true;
+    menuEl.classList.remove('show');
+    jHud.classList.remove('show');
+    hudEl.classList.add('show');
+    updateHud();
+    if (!hintShown) { hintShown = true; hint.classList.remove('hide'); hint.classList.add('show'); hintTimer = setTimeout(() => hideHint(), 8000); }
+    checkDeaths(500);
+    setTimeout(showNextDeath, 600);
+  }
+  let hintShown = false;
+  function updateMenu() {
+    const st = document.getElementById('m-reef-stat');
+    const alive = aliveFishes(state);
+    const names = alive.map((d) => d.name).join('・');
+    const msg = worstMessage(state);
+    const ni = nurseryInfo(state);
+    let extra = '';
+    if (ni.eggs) extra = '・卵あり';
+    if (ni.fry) extra += `・稚魚${ni.fry}匹`;
+    if (fishes.some((f) => f.dead)) { st.textContent = 'お知らせがあります'; st.classList.remove('ok'); }
+    else if (msg) { st.textContent = msg; st.classList.remove('ok'); }
+    else { st.textContent = `${names}${extra}・みんな元気です`; st.classList.add('ok'); }
+    const js = document.getElementById('m-jelly-stat');
+    js.textContent = jelly ? `今は ${jelly.species.name}` : '';
+    js.classList.add('ok');
+  }
+  onTap(document.getElementById('m-reef'), enterReef);
+  onTap(document.getElementById('m-jelly'), enterJelly);
+  onTap(document.getElementById('btn-home'), showMenu);
+  function exitJelly() { showMenu(); }
+  function switchSpecies(step) {
+    jelly.setSpecies(jelly.index + step);
+    renderJellyHud();
+    showToast(jelly.species.name);
+  }
+  let viewing = false;
+  function setViewing(on) {
+    viewing = on;
+    if (!jelly) return;
+    jelly.controls.autoRotate = on;
+    jHud.classList.toggle('show', !on && mode === 'jelly');
+  }
+  function jellySwipe(e) {
+    const dx = e.clientX - down.x, dy = e.clientY - down.y;
+    const quick = performance.now() - down.t < 600;
+    if (viewing && Math.hypot(dx, dy) < 10) { setViewing(false); return; }
+    if (quick && Math.abs(dx) > 60 && Math.abs(dy) < 60) switchSpecies(dx < 0 ? 1 : -1);
+  }
+  onTap(document.getElementById('j-back'), exitJelly);
+  onTap(document.getElementById('j-prev'), () => switchSpecies(-1));
+  onTap(document.getElementById('j-next'), () => switchSpecies(1));
+  onTap(jLightBtn, () => { const l = jelly.nextLight(); renderJellyHud(); showToast('照明：' + l); });
+  onTap(document.getElementById('j-view'), () => { setViewing(true); showToast('画面をタップすると戻ります', 1800); });
+
   updateHud();
   applyWater(state.tank.dirt);
 
@@ -522,8 +627,7 @@ async function init() {
   const wait = Math.max(0, 2200 - (performance.now() - startedAt));
   setTimeout(() => {
     document.getElementById('splash').classList.add('hide');
-    document.getElementById('hud').classList.add('show');
-    hint.classList.add('show');
+    showMenu();
     checkDeaths(1200);
     if (fishes.some((f) => f.dead)) return;
     const a = formatAway(awaySec);
@@ -555,6 +659,21 @@ async function init() {
     syncFromState();
     for (const f of fishes) if (!f.data.alive && !f.dead) queueDeath(f, 3000);
     const dbg = window.__reef && window.__reef.paused;
+    if (mode === 'menu') {
+      for (const f of fishes) f.data.hunger = f.hunger;
+      hudT += dt;
+      if (hudT > 0.5) { hudT = 0; updateMenu(); drainEvents(); }
+      return;   // nothing to draw behind the main screen
+    }
+    if (mode === 'jelly') {
+      for (const f of fishes) f.data.hunger = f.hunger;
+      jelly.update(dt);
+      sound.updateListener(jelly.camera);
+      hudT += dt;
+      if (hudT > 0.5) { hudT = 0; updateHud(); drainEvents(); }
+      renderer.render(jelly.scene, jelly.camera);
+      return;
+    }
     if (!dbg) for (const f of fishes) f.update(dt, world);
     for (const f of fishes) f.data.hunger = f.hunger;
     rays.userData.update(camera);
@@ -568,7 +687,7 @@ async function init() {
       for (const f of fishes) f.setGrowth(f.data.growth);
       announceSex();
       updateEggs();
-      if (document.getElementById('hud').classList.contains('show')) drainEvents();
+      drainEvents();
       if (nyOpen) renderNursery();
     }
     if (composer) composer.render(); else renderer.render(scene, camera);

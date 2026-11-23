@@ -108,13 +108,43 @@
     box-shadow: inset -2px 0 0 #fff; }
   @keyframes fry { 0% { transform: translate(0,0); } 33% { transform: translate(18px,-8px); } 66% { transform: translate(-12px,6px); } 100% { transform: translate(10px,10px); } }
   .ny-btns { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 6px; }
-  #toast { white-space: pre-line; text-align: center; max-width: 88vw; }
+  #toast { z-index: 30; white-space: pre-line; text-align: center; max-width: 88vw; }
+  #btn-jelly { background: rgba(90, 120, 230, .5); border-color: rgba(190,205,255,.45); }
+  #jelly-hud { position: fixed; inset: 0; pointer-events: none; opacity: 0; visibility: hidden; transition: opacity .6s, visibility .6s; }
+  #jelly-hud.show { opacity: 1; visibility: visible; }
+  #jelly-hud .card .days { max-width: 180px; line-height: 1.5; margin-top: 4px; }
+  .j-bottom { position: absolute; left: 0; right: 0; bottom: calc(18px + var(--safe-bottom)); display: flex; justify-content: center; gap: 12px; }
+  .btn.home { background: rgba(255,255,255,.16); border-color: rgba(255,255,255,.4); font-weight: 600; }
+  #menu { position: fixed; inset: 0; z-index: 12; display: flex; flex-direction: column; align-items: center;
+    padding: calc(28px + var(--safe-top)) 16px calc(20px + var(--safe-bottom)); overflow-y: auto;
+    background: radial-gradient(ellipse at 50% 0%, #1c7a96 0%, #0a3d5a 45%, #03192a 100%);
+    opacity: 0; visibility: hidden; transition: opacity .5s, visibility .5s; pointer-events: auto; touch-action: pan-y; }
+  #menu.show { opacity: 1; visibility: visible; }
+  .m-head { text-align: center; margin-bottom: 18px; }
+  .m-title { font-size: 28px; font-weight: 700; letter-spacing: .08em; text-shadow: 0 2px 12px rgba(0,30,50,.6); }
+  .m-sub { margin-top: 8px; font-size: 13px; opacity: .8; }
+  .m-cards { width: min(420px, 100%); display: flex; flex-direction: column; gap: 12px; }
+  .m-card { appearance: none; display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; color: #eaf8ff; font: inherit;
+    padding: 10px; border-radius: 18px; background: rgba(4, 30, 46, .55); border: 1px solid rgba(160,225,255,.25);
+    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); box-shadow: 0 6px 18px rgba(0,0,0,.25); }
+  .m-card:active { transform: scale(.98); }
+  .m-card img, .m-thumb-soon { width: 92px; height: 92px; border-radius: 14px; object-fit: cover; flex: none; }
+  .m-thumb-soon { display: flex; align-items: center; justify-content: center; font-size: 13px; opacity: .7;
+    background: linear-gradient(160deg, #2a8fb0, #0b4466); }
+  .m-card.soon { opacity: .55; }
+  .m-name { font-size: 17px; font-weight: 700; }
+  .m-desc { font-size: 12px; opacity: .8; margin-top: 4px; line-height: 1.5; }
+  .m-stat { font-size: 12px; margin-top: 6px; color: #ffd36b; line-height: 1.4; }
+  .m-stat.ok { color: #9fe8c0; }
+  .m-foot { margin-top: auto; padding-top: 18px; font-size: 11px; opacity: .5; }
   #toast.show { opacity: 1; transform: translate(-50%, -50%) scale(1); }
   #hint.hide { opacity: 0; }
 </style>
 <script type="importmap">
 { "imports": { "three": "./lib/three.module.min.js" } }
 </script>
+
+<link rel="manifest" href="manifest.json">
 </head>
 <body>
 <canvas id="c"></canvas>
@@ -131,6 +161,7 @@
       <div class="msg" id="care-msg"></div>
     </div>
     <div class="right">
+      <button class="btn home" id="btn-home">メイン画面</button>
       <button class="btn" id="btn-quality">画質：標準</button>
       <button class="btn" id="btn-camera">近くで見る</button>
       <button class="btn" id="btn-sound">音：オン</button>
@@ -166,6 +197,38 @@
     </div>
   </div>
 </div>
+<div id="menu">
+  <div class="m-head">
+    <div class="m-title">俺の水族館</div>
+    <div class="m-sub">見たい水槽を選んでください</div>
+  </div>
+  <div class="m-cards">
+    <button class="m-card" id="m-reef">
+      <img src="thumb-reef.jpg" alt="">
+      <div class="m-info"><div class="m-name">クマノミ水槽</div><div class="m-desc">サンゴ礁でクマノミを育てる</div><div class="m-stat" id="m-reef-stat"></div></div>
+    </button>
+    <button class="m-card" id="m-jelly">
+      <img src="thumb-jelly.jpg" alt="">
+      <div class="m-info"><div class="m-name">クラゲ水槽</div><div class="m-desc">ミズクラゲ・タコクラゲを眺める</div><div class="m-stat" id="m-jelly-stat"></div></div>
+    </button>
+    <div class="m-card soon">
+      <div class="m-thumb-soon">準備中</div>
+      <div class="m-info"><div class="m-name">マンタの海</div><div class="m-desc">サンゴ礁を泳ぐマンタ（これから作ります）</div></div>
+    </div>
+  </div>
+  <div class="m-foot" id="m-ver"></div>
+</div>
+<div id="jelly-hud">
+  <div class="top">
+    <div class="card"><div class="name" id="j-name">ミズクラゲ</div><div class="days" id="j-note"></div></div>
+    <div class="right">
+      <button class="btn home" id="j-back">メイン画面</button>
+      <button class="btn" id="j-light">照明：青</button>
+      <button class="btn" id="j-view">鑑賞モード</button>
+    </div>
+  </div>
+  <div class="j-bottom"><button class="btn" id="j-prev">◀ 前の種類</button><button class="btn" id="j-next">次の種類 ▶</button></div>
+</div>
 <div id="toast">エサをあげました</div>
 <div id="hint">水の中をタップしてもエサが落ちます<br>指でなぞると見回せます</div>
 
@@ -175,7 +238,7 @@
     <img class="fish" src="icon-512.png" alt="">
     <h1>俺の水族館</h1>
     <div class="by">by Urushihara</div>
-    <div class="ver">Version 0.10.0</div>
+    <div class="ver">Version 0.12.0</div>
   </div>
   <div id="splash-status">準備しています…</div>
 </div>
