@@ -175,6 +175,9 @@
   .feed-btn small { font-size: 10px; font-weight: 700; }
   .feed-btn:active { transform: scale(.93); }
   #settings .row .btn { font-size: 13px; }
+  #jhint { position: fixed; left: 50%; bottom: calc(30px + var(--safe-bottom)); transform: translateX(-50%); font-size: 13px;
+    background: rgba(4,30,46,.55); padding: 8px 16px; border-radius: 16px; white-space: nowrap; opacity: 0; transition: opacity .8s; pointer-events: none; }
+  #jhint.show { opacity: 1; }
   #toast.show { opacity: 1; transform: translate(-50%, -50%) scale(1); }
   #hint.hide { opacity: 0; }
 </style>
@@ -240,7 +243,7 @@
     </button>
     <button class="m-card" id="m-jelly">
       <img src="thumb-jelly.jpg" alt="">
-      <div class="m-info"><div class="m-name">クラゲ水槽</div><div class="m-desc">ミズクラゲ・タコクラゲを眺める</div><div class="m-stat" id="m-jelly-stat"></div></div>
+      <div class="m-info"><div class="m-name">クラゲ水槽</div><div class="m-desc">クラゲをながめる</div><div class="m-stat" id="m-jelly-stat"></div></div>
     </button>
     <div class="m-card soon">
       <div class="m-thumb-soon">準備中</div>
@@ -250,17 +253,9 @@
   <div class="m-foot" id="m-ver"></div>
 </div>
 <div id="jelly-hud">
-  <div class="top">
-    <div class="card"><div class="name" id="j-name">ミズクラゲ</div><div class="days" id="j-note"></div></div>
-    <div class="right">
-      <button class="btn home" id="j-back">メイン画面</button>
-      <button class="btn" id="j-light">照明：青</button>
-      <button class="btn" id="j-sound">音：オン</button>
-      <button class="btn" id="j-view">鑑賞モード</button>
-    </div>
-  </div>
-  <div class="j-bottom"><button class="btn" id="j-prev">◀ 前の種類</button><button class="btn" id="j-next">次の種類 ▶</button></div>
+  <div class="top" style="justify-content:flex-end"><button class="gear-btn small" id="j-back" aria-label="戻る">←</button></div>
 </div>
+<div id="jhint">左右になぞるとクラゲの種類が変わります</div>
 <div id="settings">
   <div class="panel">
     <div class="t">設定</div>
@@ -274,6 +269,7 @@
     </div>
     <div class="sec">表示と音</div>
     <div class="row"><button class="btn" id="btn-quality">画質：標準</button><button class="btn" id="btn-sound">音：オン</button></div>
+    <div class="row"><button class="btn" id="btn-jlight">クラゲの照明：青</button></div>
     <div class="d small">画質を変えると読み込み直します。カクカクするときは「軽量」に。</div>
     <div class="sec">データのバックアップ</div>
     <div class="d">育てているクマノミのデータ（名前・成長・卵や稚魚など）を保存します。ホーム画面のアイコンを消す前や、別の開き方をする前にどうぞ。</div>
@@ -299,7 +295,7 @@
     <img class="fish" src="icon-512.png" alt="">
     <h1>俺の水族館</h1>
     <div class="by">by Urushihara</div>
-    <div class="ver">Version 0.17.0</div>
+    <div class="ver">Version 0.17.1</div>
   </div>
   <div id="splash-status">準備しています…</div>
 </div>

@@ -21,7 +21,7 @@ import {
   exportCode, parseBackup, restoreBackup, backupSummary,
 } from './state.js';
 
-export const APP = { name: '俺の水族館', version: '0.17.0' };
+export const APP = { name: '俺の水族館', version: '0.17.1' };
 
 const QUALITY = {
   low: { label: '軽量', dpr: 1, shadows: false, shadowSize: 0, bloom: false, particles: 120, coral: 0.55 },
@@ -220,6 +220,7 @@ async function init() {
     updateHud();
     setCode.value = '';
     document.getElementById('ver-info').textContent = '今のバージョン：' + APP.version;
+    renderJellyHud();
     let last = '';
     try { last = localStorage.getItem('ore-no-suizokukan.lastBackup') || ''; } catch {}
     setInfo.textContent = last ? `前回のバックアップ：${last}` : 'まだバックアップしていません';
@@ -593,24 +594,25 @@ async function init() {
   // ---- jellyfish tank (viewing only) ----
   const hudEl = document.getElementById('hud');
   const jHud = document.getElementById('jelly-hud');
-  const jName = document.getElementById('j-name'), jNote = document.getElementById('j-note');
-  const jLightBtn = document.getElementById('j-light');
-  function renderJellyHud() {
-    const sp = jelly.species;
-    jName.textContent = sp.name;
-    jNote.textContent = sp.note;
-    jLightBtn.textContent = '照明：' + LIGHTS[jelly.lightKey].label;
-    jSound.textContent = SOUND_LABEL[sound.mode];
-  }
-  function enterJelly() {
-    sound.start();
-    if (follow) setFollow(false);
+  const jLightBtn = document.getElementById('btn-jlight');
+  function ensureJelly() {
     if (!jelly) {
       jelly = new JellyTank(renderer, Math.round(Q.particles * 0.8));
       jelly.setSize(window.innerWidth, window.innerHeight);
       jelly.resetCamera();
       window.__reef.jelly = jelly;
     }
+    return jelly;
+  }
+  function renderJellyHud() {
+    if (jelly) jLightBtn.textContent = 'クラゲの照明：' + LIGHTS[jelly.lightKey].label;
+  }
+  const jHint = document.getElementById('jhint');
+  let jHintShown = false;
+  function enterJelly() {
+    sound.start();
+    if (follow) setFollow(false);
+    ensureJelly();
     mode = 'jelly';
     controls.enabled = false;
     jelly.controls.enabled = true;
@@ -619,6 +621,7 @@ async function init() {
     jHud.classList.add('show');
     renderJellyHud();
     hideHint();
+    if (!jHintShown) { jHintShown = true; jHint.classList.add('show'); setTimeout(() => jHint.classList.remove('show'), 5000); }
   }
   // ---- main screen (choose a tank) ----
   const menuEl = document.getElementById('menu');
@@ -630,6 +633,7 @@ async function init() {
     controls.enabled = false;
     hudEl.classList.remove('show');
     jHud.classList.remove('show');
+    jHint.classList.remove('show');
     nyOpen = false; nyEl.classList.remove('show');
     updateMenu();
     menuEl.classList.add('show');
@@ -662,7 +666,7 @@ async function init() {
     else if (msg) { st.textContent = msg; st.classList.remove('ok'); }
     else { st.textContent = `${names}${extra}・みんな元気です`; st.classList.add('ok'); }
     const js = document.getElementById('m-jelly-stat');
-    js.textContent = jelly ? `今は ${jelly.species.name}` : '';
+    js.textContent = '';
     js.classList.add('ok');
   }
   onTap(document.getElementById('m-reef'), enterReef);
@@ -671,7 +675,7 @@ async function init() {
   function switchSpecies(step) {
     jelly.setSpecies(jelly.index + step);
     renderJellyHud();
-    showToast(jelly.species.name);
+    jHint.classList.remove('show');
   }
   let viewing = false;
   function setViewing(on) {
@@ -687,13 +691,7 @@ async function init() {
     if (quick && Math.abs(dx) > 60 && Math.abs(dy) < 60) switchSpecies(dx < 0 ? 1 : -1);
   }
   onTap(document.getElementById('j-back'), exitJelly);
-  onTap(document.getElementById('j-prev'), () => switchSpecies(-1));
-  onTap(document.getElementById('j-next'), () => switchSpecies(1));
-  onTap(jLightBtn, () => { const l = jelly.nextLight(); renderJellyHud(); showToast('照明：' + l); });
-  const jSound = document.getElementById('j-sound');
-  const jSoundLabel = () => { jSound.textContent = SOUND_LABEL[sound.mode]; };
-  onTap(jSound, () => { sound.nextMode(); jSoundLabel(); soundLabel(); showToast(SOUND_LABEL[sound.mode]); });
-  onTap(document.getElementById('j-view'), () => { setViewing(true); showToast('画面をタップすると戻ります', 1800); });
+  onTap(jLightBtn, () => { ensureJelly().nextLight(); renderJellyHud(); });
 
   updateHud();
   applyWater(state.tank.dirt);
