@@ -3,12 +3,13 @@ export default {
   id: 'mizukurage',
   name: 'ミズクラゲ',
   note: '4つの輪の模様が目印。ゆっくり拍動して漂う',
-  count: 10,
+  count: 14,
   size: [0.42, 0.62],          // bell radius range
-  bell: { height: 0.34, flare: 1.05, color: '#d6ecff', opacity: 0.12, rim: 0.6, pattern: 'photo', texture: 'jelly-aurelia.jpg', patternColor: '#ffe2b8', lobes: 8, inner: 0.6 },
-  pulse: { period: [1.7, 2.3], contract: 0.2, thrust: 0.32 },
+  bell: { height: 0.5, flare: 1.04, color: '#d6ecff', opacity: 0.26, rim: 0.85, pattern: 'photo', texture: 'jelly-aurelia.jpg', patternColor: '#ffe2b8', lobes: 8, inner: 0.9 },
+  pulse: { period: [1.5, 2.0], contract: 0.27, thrust: 0.34 },
   sink: 0.045,
-  tentacles: { count: 150, segments: 7, length: 0.32, color: '#f4f8ff', opacity: 0.32 },
-  arms: { count: 4, segments: 12, length: 1.6, radius: [0.2, 0.07], color: '#eef3ff', frill: '#fff0cf', opacity: 0.5, club: false, style: 'ribbon' },
+  tilt: 0.75,
+  tentacles: { count: 150, segments: 7, length: 0.42, color: '#f4f8ff', opacity: 0.36 },
+  arms: { count: 4, segments: 12, length: 0.95, radius: [0.26, 0.09], color: '#eef3ff', frill: '#fff0cf', opacity: 0.58, club: false, style: 'ribbon' },
   lights: ['blue', 'purple', 'rainbow', 'white'],
 };

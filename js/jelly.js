@@ -288,7 +288,7 @@ class Population {
       j.tents = [];
       if (cfg.tentacles) {
         const tc = cfg.tentacles;
-        for (let k = 0; k < tc.count; k++) j.tents.push(new Chain(tc.segments, tc.length * R / tc.segments * 1.6, j.pos));
+        for (let k = 0; k < tc.count; k++) j.tents.push(new Chain(tc.segments, tc.length * R / tc.segments, j.pos));
       }
       // oral arms from under the bell
       j.arms = [];
@@ -338,7 +338,7 @@ class Population {
   // Aurelia oral arms: long, folded (gutter-shaped) curtains with densely ruffled, whitish edges
   _buildRibbons(scene) {
     const cfg = this.cfg, ac = cfg.arms;
-    this.ROWS = 90; this.COLS = 11;
+    this.ROWS = 60; this.COLS = 11;
     const arms = cfg.count * ac.count;
     const vPer = this.ROWS * this.COLS;
     this.ribPos = new Float32Array(arms * vPer * 3);
@@ -498,7 +498,7 @@ class Population {
       flow.set(-j.pos.z, 0, j.pos.x).multiplyScalar(0.045 / Math.max(0.6, rr));
       j.wander.x += (Math.random() - 0.5) * dt * 0.6; j.wander.z += (Math.random() - 0.5) * dt * 0.6;
       j.wander.clampLength(0, 1);
-      d.set(j.wander.x * 0.35, 1, j.wander.z * 0.35);
+      d.set(j.wander.x * (cfg.tilt || 0.35), 1, j.wander.z * (cfg.tilt || 0.35));
       if (rr > R_TANK * 0.75) { d.x -= j.pos.x / rr * 0.9; d.z -= j.pos.z / rr * 0.9; }
       if (j.pos.y > Y_MAX - 0.3) d.y = 0.2;             // lean away near the top
       if (j.pos.y < Y_MIN + 0.4) d.y = 1.6;
@@ -521,7 +521,10 @@ class Population {
           const ang = k / j.tents.length * Math.PI * 2;
           v.set(Math.cos(ang) * 0.96 * contract, rimY, Math.sin(ang) * 0.96 * contract).applyMatrix4(j.mesh.matrixWorld);
           const ch = j.tents[k];
-          ch.update(v, dt, 0.35, 0.93, flow);
+          // tentacles splay out like a skirt and trail behind as the bell pushes
+          this._rad.set(Math.cos(ang), 0, Math.sin(ang)).applyQuaternion(j.mesh.quaternion);
+          const rest = this._t1.copy(this._rad).multiplyScalar(0.3 + 0.25 * j.pulse).addScaledVector(j.up, -0.9).normalize();
+          ch.update(v, dt, 0.3, 0.92, flow, rest, 0.6 + j.pulse * 0.8);
           for (let s = 1; s < ch.n; s++) {
             const a = ch.p[s - 1], b = ch.p[s];
             this.linePos[li++] = a.x; this.linePos[li++] = a.y; this.linePos[li++] = a.z;
