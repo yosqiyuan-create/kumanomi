@@ -673,7 +673,7 @@ class Population {
         } else if (this.lumpMesh) {
           this._rad.set(Math.cos(ang), 0, Math.sin(ang)).applyQuaternion(j.mesh.quaternion);
           const rest = this._t2.copy(j.up).multiplyScalar(-1).addScaledVector(this._rad, ac.splay || 0.18).normalize();
-          ch.update(v, dt, 0.3, 0.85, flow, rest, 3.0);
+          ch.update(v, dt, 0.3, 0.85, flow, rest, ac.stiff ?? 3.0);
         } else ch.update(v, dt, 0.5, 0.9, flow);
         if (this.lumpMesh) { this._updateMastigias(j, k, ang, ch, dt, t); continue; }
         if (this.ribbons) {
@@ -768,10 +768,16 @@ Population.prototype._updateMastigias = function (j, k, ang, ch, dt, t) {
   if (this.blockMesh) {
     const X = this._bx, Y = this._by, Z = this._bz;
     // hang along the bell axis, leaning a little with the arm's sway
-    Y.subVectors(ch.p[0], ch.p[ch.n - 1]).normalize().multiplyScalar(0.35).addScaledVector(j.up, 0.65).normalize();
+    // each arm swings on its own rhythm and squeezes in/out with the bell's beat, so it never looks rigid
+    const ph = t * 0.9 + k * 0.85 + jIdx * 1.3;
+    Y.subVectors(ch.p[0], ch.p[ch.n - 1]).normalize().multiplyScalar(0.6).addScaledVector(j.up, 0.4);
+    Z.crossVectors(rad, j.up).normalize();
+    Y.addScaledVector(rad, -0.16 * Math.sin(ph) - 0.12 * j.pulse).addScaledVector(Z, 0.12 * Math.sin(ph * 1.27 + 1)).normalize();
     X.copy(rad).addScaledVector(Y, -rad.dot(Y)).normalize();
+    X.applyAxisAngle(Y, 0.12 * Math.sin(ph * 0.8 + 2));            // slight twist
     Z.crossVectors(X, Y);
-    m.makeBasis(X, Y, Z).scale(sc.set(R, R, R)).setPosition(ch.p[0]);
+    m.makeBasis(X, Y, Z).scale(sc.set(R * (1 - 0.14 * j.pulse + 0.05 * Math.sin(ph * 1.6)), R * (1 + 0.1 * j.pulse), R * (1 + 0.06 * Math.sin(ph * 1.1))))
+      .setPosition(ch.p[0]);
     this.blockMesh.setMatrixAt(jIdx * ac.count + k, m);
     root = cp.copy(ch.p[ch.n - 1]).addScaledVector(X, R * 0.22);
   }
