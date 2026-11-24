@@ -494,8 +494,11 @@ class Population {
       j.phase = (j.phase + dt / j.period) % 1;
       // each jelly drifts toward its own preferred depth: weak pulses let it sink, strong ones lift it
       j.retarget -= dt;
-      if (j.retarget < 0) { j.targetY = rnd(B.y0 + 0.3, B.y1 - 0.6); j.retarget = rnd(10, 25); }
-      const climb = THREE.MathUtils.clamp((j.targetY - j.pos.y) * 0.8 + 0.5, 0.15, 1.2);
+      if (j.retarget < 0) { j.targetY = rnd(B.y0 + 0.3, B.y1 - 0.6); j.retarget = rnd(12, 25); }
+      // above the target: pulses weaken to nothing and it sinks; below: pulses lift it
+      const dy = j.targetY - j.pos.y;
+      const climb = THREE.MathUtils.clamp(dy * 0.5 + 0.2, 0, 1.2);
+      j.vel.y += THREE.MathUtils.clamp(dy, -1, 1) * 0.14 * dt;
       if (j.phase < prev) j.vel.addScaledVector(j.up, cfg.pulse.thrust * climb * (0.8 + 0.4 * Math.random()));
       const p = j.phase;
       j.pulse = p < 0.28 ? Math.sin(p / 0.28 * Math.PI / 2) : 1 - THREE.MathUtils.smoothstep(p, 0.28, 1.0);
