@@ -14,7 +14,7 @@ export const LIGHTS = {
 const PREF = 'ore-no-suizokukan.jelly';
 const UP = new THREE.Vector3(0, 1, 0);
 // swim area; resized to what the camera sees so jellies fill the whole screen
-const B = { rx: 2.6, rz: 2.2, y0: 0.7, y1: 5.6 };
+const B = { rx: 2.6, rz: 2.2, y0: 0.7, y1: 5.6, ver: 0 };
 function fitBounds(camera, targetY, dist) {
   const halfH = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * dist;
   const halfW = halfH * camera.aspect;
@@ -22,6 +22,15 @@ function fitBounds(camera, targetY, dist) {
   B.y1 = targetY + halfH * 0.9;
   B.rx = Math.max(1.6, halfW * 1.05);
   B.rz = 2.2;
+  B.ver++;
+}
+// a new spot to drift toward somewhere inside the swim area
+function pickTarget(j) {
+  // spots lean toward the edges so the whole screen gets used, not just the middle
+  j.targetX = Math.sign(Math.random() - 0.5) * Math.pow(Math.random(), 0.6) * 0.92 * B.rx;
+  j.targetZ = rnd(-0.8, 0.8) * B.rz;
+  const u = Math.random();
+  j.targetY = B.y0 + 0.1 + (B.y1 - 0.4 - B.y0) * (u < 0.5 ? Math.pow(2 * u, 0.7) / 2 : 1 - Math.pow(2 - 2 * u, 0.7) / 2);
 }
 const ell = (p) => Math.hypot(p.x / B.rx, p.z / B.rz);   // 1 = edge of the swim area
 
@@ -289,9 +298,11 @@ class Population {
         period: rnd(cfg.pulse.period[0], cfg.pulse.period[1]),
         phase: Math.random(),
         pulse: 0,
-        targetY: rnd(B.y0 + 0.3, B.y1 - 0.6),
+        targetY: 0, targetX: 0, targetZ: 0,
         retarget: rnd(5, 20),
+        bver: B.ver,
       };
+      pickTarget(j);
       mesh.position.copy(j.pos);
       mesh.quaternion.setFromUnitVectors(UP, j.up);
       // tentacles from the rim
@@ -494,11 +505,22 @@ class Population {
       j.phase = (j.phase + dt / j.period) % 1;
       // each jelly drifts toward its own preferred depth: weak pulses let it sink, strong ones lift it
       j.retarget -= dt;
-      if (j.retarget < 0) { j.targetY = rnd(B.y0 + 0.3, B.y1 - 0.6); j.retarget = rnd(12, 25); }
+      // screen turned: each jelly notices a little later, so they spread out / come back gradually
+      if (j.bver !== B.ver) {
+        j.bver = B.ver;
+        const out = ell(j.pos) > 0.95 || j.pos.y > B.y1 || j.pos.y < B.y0;
+        j.retarget = out ? rnd(0, 3) : Math.min(j.retarget, rnd(0, 10));
+      }
+      if (j.retarget < 0) { pickTarget(j); j.retarget = rnd(12, 25); }
+      // swim sideways toward its spot; faster when it is off screen
+      const hx = j.targetX - j.pos.x, hz = j.targetZ - j.pos.z;
+      const hp = ell(j.pos) > 1 ? 0.5 : 0.22;
+      j.vel.x += THREE.MathUtils.clamp(hx, -1, 1) * hp * dt;
+      j.vel.z += THREE.MathUtils.clamp(hz, -1, 1) * hp * dt;
       // above the target: pulses weaken to nothing and it sinks; below: pulses lift it
       const dy = j.targetY - j.pos.y;
       const climb = THREE.MathUtils.clamp(dy * 0.5 + 0.2, 0, 1.2);
-      j.vel.y += THREE.MathUtils.clamp(dy, -1, 1) * 0.14 * dt;
+      j.vel.y += THREE.MathUtils.clamp(dy, -1, 1) * 0.24 * dt;
       if (j.phase < prev) j.vel.addScaledVector(j.up, cfg.pulse.thrust * climb * (0.8 + 0.4 * Math.random()));
       const p = j.phase;
       j.pulse = p < 0.28 ? Math.sin(p / 0.28 * Math.PI / 2) : 1 - THREE.MathUtils.smoothstep(p, 0.28, 1.0);
@@ -513,6 +535,7 @@ class Population {
       j.wander.x += (Math.random() - 0.5) * dt * 0.6; j.wander.z += (Math.random() - 0.5) * dt * 0.6;
       j.wander.clampLength(0, 1);
       d.set(j.wander.x * (cfg.tilt || 0.35), 1, j.wander.z * (cfg.tilt || 0.35));
+      d.x += THREE.MathUtils.clamp(hx * 0.25, -0.5, 0.5); d.z += THREE.MathUtils.clamp(hz * 0.25, -0.5, 0.5);
       const e = ell(j.pos);
       if (e > 0.8) { d.x -= j.pos.x / rr * 0.9 * (e - 0.6) * 2; d.z -= j.pos.z / rr * 0.9 * (e - 0.6) * 2; }
       if (j.pos.y > B.y1 - 0.3) d.y = 0.2;             // lean away near the top
@@ -761,7 +784,9 @@ export class JellyTank {
     this.camera.aspect = w / h;
     this.camera.fov = this.camera.aspect < 1 ? 62 : 50;
     this.camera.updateProjectionMatrix();
-    fitBounds(this.camera, 3.1, this.camera.aspect < 1 ? 8.2 : 7.2);
+    // use the real viewing distance (the camera is not moved when the phone turns)
+    const dist = this.controls ? this.camera.position.distanceTo(this.controls.target) : 0;
+    fitBounds(this.camera, 3.1, dist > 2 ? dist : (this.camera.aspect < 1 ? 8.2 : 7.2));
   }
 
   resetCamera() {
