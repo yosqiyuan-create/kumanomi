@@ -158,6 +158,20 @@ void main(){
     float keep = mix(0.45, 0.1, smoothstep(2.0, 6.0, ri));          // sparser, bigger spots on the clear top
     float spot = smoothstep(rad, rad * 0.72, length(dd)) * step(keep, h) * step(0.5, ri);
     col = mix(col, uPat, spot); a = mix(a, 0.97, spot);
+  } else if (uPattern == 6) {     // white-spotted: glowing blue dome, dense small white dots (denser toward the margin)
+    float ang = atan(q.y, q.x);
+    float rf = vT * 24.0; float ri = floor(rf); float rv = fract(rf);
+    float n = 4.0 + ri * 3.9;               // about square cells, so the dots stay round
+    float cf = (ang / 6.28318 + 0.5) * n + ri * 0.41;
+    float cu = fract(cf);
+    float h = fract(sin(dot(vec2(floor(cf), ri), vec2(12.9898, 78.233))) * 43758.5453);
+    vec2 dd = vec2(cu - 0.5 + (h - 0.5) * 0.25, rv - 0.5 + (fract(h * 7.1) - 0.5) * 0.25);
+    float rad = 0.2 * (0.75 + 0.5 * h);
+    float spot = smoothstep(rad, rad * 0.55, length(dd)) * step(0.12, h) * step(1.0, ri);
+    float body = 0.55 + 0.45 * smoothstep(0.1, 0.95, vT);         // thicker jelly toward the rim
+    col = uColor * (0.75 + 0.5 * vT);
+    a = uOpacity * body;
+    col = mix(col, uPat, spot); a = mix(a, 0.95, spot);
   } else if (uPattern == 2) {     // Mastigias: white spots
     vec3 sp = vLocal * 6.0;
     vec3 cell = floor(sp); vec3 f = fract(sp) - 0.5;
@@ -257,7 +271,7 @@ class Population {
         uTime: { value: 0 }, uPulse: { value: 0 }, uPhase: { value: 0 }, uContract: { value: cfg.pulse.contract }, uLobes: { value: cfg.bell.lobes || 0 },
         uColor: { value: new THREE.Color(bc.color) }, uPat: { value: new THREE.Color(bc.patternColor) },
         uRim: { value: rimColor.clone() }, uOpacity: { value: bc.opacity }, uRimStr: { value: bc.rim },
-        uPattern: { value: { rings: 1, spots: 2, photo: 3, mastigias: 4, photoStrip: 5 }[bc.pattern] || 0 },
+        uPattern: { value: { rings: 1, spots: 2, photo: 3, mastigias: 4, photoStrip: 5, whiteSpot: 6 }[bc.pattern] || 0 },
         uVar: { value: 0 },
         uTex: { value: null },
       }]),
@@ -403,19 +417,36 @@ class Population {
   _buildMastigias(scene) {
     const cfg = this.cfg, ac = cfg.arms;
     const per = (ac.segments - 1) * ac.lumpsPerSeg;
-    const total = cfg.count * ac.count * per;
-    const mat = new THREE.MeshStandardMaterial({ roughness: 0.6, emissive: new THREE.Color('#6a4518') });
-    this.lumpMesh = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 0), mat, total);
+    this.tipBase = cfg.count * ac.count * per;
+    const total = this.tipBase + (ac.apps.bulb ? cfg.count * ac.count : 0);
+    const mat = new THREE.MeshStandardMaterial({ roughness: 0.6, emissive: new THREE.Color(ac.emissive || '#6a4518') });
+    this.lumpMesh = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, ac.lumpDetail || 0), mat, total);
     this.lumpMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.lumpMesh.frustumCulled = false;
-    const ochre = new THREE.Color('#dcae68'), white = new THREE.Color('#f3efe2'), dark = new THREE.Color('#3b3328'), c = new THREE.Color();
+    const c = new THREE.Color();
+    const pal = (ac.lumpColors || ['#dcae68', '#f3efe2', '#3b3328']).map((x) => new THREE.Color(x));
+    const odds = ac.lumpOdds || [0.76, 0.2, 0.04];
     this.lumps = [];
-    for (let i = 0; i < total; i++) {
-      const r = Math.random();
-      c.copy(r < 0.2 ? white : r < 0.24 ? dark : ochre).multiplyScalar(0.9 + Math.random() * 0.3);
+    let clusters = null;
+    for (let i = 0; i < this.tipBase; i++) {
+      // each arm gets its own set of puffs; lumps gather around them like cauliflower florets
+      if (ac.clusters && i % per === 0) {
+        clusters = [];
+        for (let k = 0; k < ac.clusters; k++) clusters.push({ f: Math.pow(Math.random(), ac.clusterBias || 1.3), a: Math.random() * Math.PI * 2, r: 0.4 + Math.random() * 1.6, s: 0.6 + Math.random() * 0.9 });
+      }
+      let r = Math.random(), ci = 0;
+      while (ci < odds.length - 1 && r > odds[ci]) { r -= odds[ci]; ci++; }
+      c.copy(pal[ci]).multiplyScalar(0.85 + Math.random() * 0.3);
       this.lumpMesh.setColorAt(i, c);
-      this.lumps.push({ a: Math.random() * Math.PI * 2, rr: 0.55 + Math.random() * 0.55, s: (r < 0.2 ? 0.45 : 1) * (0.7 + Math.random() * 0.6), fo: Math.random() });
+      if (clusters) {
+        const C = clusters[(Math.random() * clusters.length) | 0];
+        const g = () => (Math.random() + Math.random() + Math.random() - 1.5) * 0.7;
+        this.lumps.push({ cl: true, f: THREE.MathUtils.clamp(C.f + g() * (ac.clusterSpread || 1) * 0.08, 0, 1), a: C.a + g() * (ac.clusterSpread || 1) * 0.9, rr: Math.max(0.1, C.r + g() * (ac.clusterSpread || 1) * 0.5), s: C.s * (0.5 + Math.random() * 0.7) });
+      } else {
+        this.lumps.push({ a: Math.random() * Math.PI * 2, rr: 0.55 + Math.random() * 0.55, s: (r < 0.2 ? 0.45 : 1) * (0.7 + Math.random() * 0.6), fo: Math.random() });
+      }
     }
+    for (let i = this.tipBase; i < total; i++) this.lumpMesh.setColorAt(i, c.set(ac.apps.bulb));
     scene.add(this.lumpMesh);
     // appendages: flat translucent straps
     const ap = ac.apps;
@@ -573,7 +604,7 @@ class Population {
       // oral arms
       for (let k = 0; k < j.arms.length; k++) {
         const ang = k / j.arms.length * Math.PI * 2 + 0.4;
-        const rootR = this.ribbons ? 0.17 : 0.12;
+        const rootR = ac.rootR || (this.ribbons ? 0.17 : 0.12);
         v.set(Math.cos(ang) * rootR, cfg.bell.height * 0.1, Math.sin(ang) * rootR).applyMatrix4(j.mesh.matrixWorld);
         const ch = j.arms[k];
         if (this.ribbons) {
@@ -582,7 +613,7 @@ class Population {
           ch.update(v, dt, 0.3, 0.86, flow, rest, 2.2);
         } else if (this.lumpMesh) {
           this._rad.set(Math.cos(ang), 0, Math.sin(ang)).applyQuaternion(j.mesh.quaternion);
-          const rest = this._t2.copy(j.up).multiplyScalar(-1).addScaledVector(this._rad, 0.18).normalize();
+          const rest = this._t2.copy(j.up).multiplyScalar(-1).addScaledVector(this._rad, ac.splay || 0.18).normalize();
           ch.update(v, dt, 0.3, 0.85, flow, rest, 3.0);
         } else ch.update(v, dt, 0.5, 0.9, flow);
         if (this.lumpMesh) { this._updateMastigias(j, k, ang, ch, dt, t); continue; }
@@ -662,14 +693,14 @@ Population.prototype._updateMastigias = function (j, k, ang, ch, dt, t) {
   const t1 = this._t1, t2 = this._t2;
   for (let i = 0; i < per; i++) {
     const L = this.lumps[base + i];
-    const f = Math.min(1, (Math.floor(i / ac.lumpsPerSeg) + L.fo) / (ac.segments - 1));
+    const f = L.cl ? L.f : Math.min(1, (Math.floor(i / ac.lumpsPerSeg) + L.fo) / (ac.segments - 1));
     ch.sample(f, cp, d);
     t1.copy(rad).addScaledVector(d, -rad.dot(d)).normalize();
     t2.crossVectors(d, t1).normalize();
     const thick = R * ac.lump * (1 - 0.35 * f);
     const a = L.a + Math.sin(t * 0.8 + i) * 0.1;
     cp.addScaledVector(t1, Math.cos(a) * thick * L.rr).addScaledVector(t2, Math.sin(a) * thick * L.rr);
-    const sz = R * 0.036 * L.s * (1 - 0.25 * f);
+    const sz = R * (ac.lumpSize || 0.036) * L.s * (1 - 0.25 * f);
     m.compose(cp, q.identity(), sc.set(sz, sz, sz));
     this.lumpMesh.setMatrixAt(base + i, m);
   }
@@ -696,6 +727,12 @@ Population.prototype._updateMastigias = function (j, k, ang, ch, dt, t) {
       P[o + 1] = cp.y + t1.y * (u * w + sway) + t2.y * wave;
       P[o + 2] = cp.z + t1.z * (u * w + sway) + t2.z * wave;
     }
+  }
+  if (ap.bulb) {   // small white club at the very end
+    app.sample(1, cp, d);
+    const bs = R * (ap.bulbSize || 0.06);
+    m.compose(cp, q.setFromUnitVectors(UP, d.normalize().negate()), sc.set(bs * 0.8, bs * 1.4, bs * 0.8));
+    this.lumpMesh.setMatrixAt(this.tipBase + jIdx * ac.count + k, m);
   }
 };
 
