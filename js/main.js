@@ -18,9 +18,10 @@ import {
   loadState, saveState, simulate, catchUp, dayCount, careMessages, worstMessage, formatAway, RATES,
   stageName, sexName, addFish, farewell, aliveFishes, updateSexes, MAX_FISH, PAIR,
   feedNursery, moveFryToTank, releaseFry, nurseryInfo,
+  exportCode, parseBackup, restoreBackup, backupSummary,
 } from './state.js';
 
-export const APP = { name: '俺の水族館', version: '0.13.3' };
+export const APP = { name: '俺の水族館', version: '0.16.1' };
 
 const QUALITY = {
   low: { label: '軽量', dpr: 1, shadows: false, shadowSize: 0, bloom: false, particles: 120, coral: 0.55 },
@@ -119,7 +120,9 @@ async function init() {
   controls.enablePan = false;
   controls.enableDamping = true;
   controls.dampingFactor = 0.08;
-  controls.minDistance = 2.5;
+  controls.minDistance = 0.45;          // pinch out to get really close
+  controls.zoomToCursor = true;          // zoom toward where the fingers are
+  controls.zoomSpeed = 1.2;
   controls.maxDistance = 13;
   controls.minPolarAngle = 1.0;
   controls.maxPolarAngle = 1.72;
@@ -133,6 +136,7 @@ async function init() {
     camera.aspect = aspect;
     camera.updateProjectionMatrix();
     const dist = aspect < 1 ? 7.0 : 8.0;
+    controls.target.copy(target);
     camera.position.set(target.x, target.y + 0.7, target.z + dist);
     controls.update();
   }
@@ -200,12 +204,103 @@ async function init() {
   const sound = new AquariumSound();
   food.onEat = (pos) => sound.eat(pos);
   const unlock = () => sound.start();
+  document.addEventListener('click', unlock);
   document.addEventListener('pointerup', unlock);
   document.addEventListener('touchend', unlock);
   const soundBtn = document.getElementById('btn-sound');
   const soundLabel = () => { soundBtn.textContent = SOUND_LABEL[sound.mode]; };
   soundLabel();
   soundBtn.addEventListener('click', () => { sound.nextMode(); soundLabel(); showToast(SOUND_LABEL[sound.mode]); });
+
+  // ---- settings: backup / restore ----
+  const setEl = document.getElementById('settings');
+  const setCode = document.getElementById('set-code');
+  const setInfo = document.getElementById('set-info');
+  function openSettings() {
+    updateHud();
+    setCode.value = '';
+    document.getElementById('ver-info').textContent = '今のバージョン：' + APP.version;
+    let last = '';
+    try { last = localStorage.getItem('ore-no-suizokukan.lastBackup') || ''; } catch {}
+    setInfo.textContent = last ? `前回のバックアップ：${last}` : 'まだバックアップしていません';
+    setEl.classList.add('show');
+  }
+  function markBackup() {
+    const d = new Date();
+    const t = `${d.getMonth() + 1}月${d.getDate()}日 ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
+    try { localStorage.setItem('ore-no-suizokukan.lastBackup', t); } catch {}
+    setInfo.textContent = `前回のバックアップ：${t}`;
+  }
+  onTap(document.getElementById('btn-settings'), openSettings);
+  onTap(document.getElementById('btn-back'), () => showMenu());
+
+  // ---- version up: compare with the published page, reload fresh ----
+  const verNum = (v) => v.split('.').map((x) => parseInt(x, 10) || 0);
+  const newer = (a, b) => { const x = verNum(a), y = verNum(b); for (let i = 0; i < 3; i++) { if (x[i] !== y[i]) return x[i] > y[i]; } return false; };
+  const verUpd = document.getElementById('ver-update');
+  onTap(document.getElementById('ver-check'), async () => {
+    const info = document.getElementById('ver-info');
+    info.textContent = '確認しています…';
+    try {
+      const html = await (await fetch('./index.html?v=' + Date.now(), { cache: 'no-store' })).text();
+      const m = html.match(/Version (\d+\.\d+\.\d+)/);
+      const latest = m ? m[1] : null;
+      if (latest && newer(latest, APP.version)) {
+        info.textContent = `新しいバージョン ${latest} があります（今は ${APP.version}）`;
+        verUpd.style.display = '';
+      } else {
+        info.textContent = `今のバージョン ${APP.version} が最新です`;
+        verUpd.style.display = 'none';
+      }
+    } catch {
+      info.textContent = '確認できませんでした（通信を確認してください）';
+    }
+  });
+  onTap(verUpd, () => {
+    saveState(state);
+    try { localStorage.setItem('ore-no-suizokukan.autoBackup', exportCode(state)); } catch {}
+    location.replace('./?v=' + Date.now());
+  });
+  onTap(document.getElementById('set-close'), () => setEl.classList.remove('show'));
+  onTap(document.getElementById('set-copy'), async () => {
+    saveState(state);
+    const code = exportCode(state);
+    setCode.value = code;
+    try { await navigator.clipboard.writeText(code); showToast('バックアップをコピーしました\nメモ帳などに貼って保管してください', 3000); }
+    catch { setCode.select(); showToast('下の枠の文字を全部コピーして保管してください', 3000); }
+    markBackup();
+  });
+  onTap(document.getElementById('set-file'), async () => {
+    saveState(state);
+    const code = exportCode(state);
+    const d = new Date();
+    const name = `俺の水族館_バックアップ_${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}.txt`;
+    const file = new File([code], name, { type: 'text/plain' });
+    try {
+      if (navigator.canShare && navigator.canShare({ files: [file] })) await navigator.share({ files: [file], title: '俺の水族館 バックアップ' });
+      else { const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = name; a.click(); }
+      markBackup();
+    } catch {}
+  });
+  function doRestore(text) {
+    const s2 = parseBackup(text);
+    if (!s2) { showToast('バックアップの文字が正しくありません', 2600); return; }
+    if (!window.confirm(`このデータに戻しますか？\n${backupSummary(s2)}\n（今のデータは上書きされます）`)) return;
+    if (!restoreBackup(s2)) { showToast('戻せませんでした', 2400); return; }
+    showToast('データを戻しました。読み込み直します…', 2000);
+    setTimeout(() => location.reload(), 1200);
+  }
+  onTap(document.getElementById('set-restore'), () => doRestore(setCode.value));
+  const fileIn = document.getElementById('set-file-in');
+  onTap(document.getElementById('set-load'), () => fileIn.click());
+  fileIn.addEventListener('change', async () => {
+    const f = fileIn.files && fileIn.files[0];
+    if (!f) return;
+    doRestore(await f.text());
+    fileIn.value = '';
+  });
+  // ask the browser to keep this app's data (helps against automatic clean-up)
+  try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch {}
 
   // ---- feeding ----
   const ray = new THREE.Raycaster();
@@ -215,6 +310,7 @@ async function init() {
   renderer.domElement.addEventListener('pointerup', (e) => {
     if (!down) return;
     if (mode === 'jelly') { jellySwipe(e); down = null; return; }
+    if (mode === 'reef' && down.x < 36 && e.clientX - down.x > 70 && Math.abs(e.clientY - down.y) < 120) { down = null; showMenu(); return; }
     const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y);
     const quick = performance.now() - down.t < 350;
     down = null;
@@ -262,7 +358,7 @@ async function init() {
   const lim = { minD: controls.minDistance, maxD: controls.maxDistance, minA: controls.minAzimuthAngle, maxA: controls.maxAzimuthAngle, minP: controls.minPolarAngle, maxP: controls.maxPolarAngle };
   function setFollow(on) {
     follow = on;
-    camBtn.textContent = on ? '全体を見る' : '近くで見る';
+    if (camBtn) camBtn.textContent = on ? '🌊 全体を見る' : '🔍 近くで見る';
     if (on) {
       Object.assign(controls, { minDistance: 0.7, maxDistance: 4, minAzimuthAngle: -Infinity, maxAzimuthAngle: Infinity, minPolarAngle: 0.35, maxPolarAngle: 2.5 });
       const dir = camera.position.clone().sub(controls.target).normalize();
@@ -274,7 +370,7 @@ async function init() {
     }
     controls.update();
   }
-  camBtn.addEventListener('click', () => setFollow(!follow));
+  if (camBtn) onTap(camBtn, () => { setEl.classList.remove('show'); setFollow(!follow); });
   const _fd = new THREE.Vector3();
   function updateFollow(dt) {
     if (!follow) return;
@@ -291,6 +387,7 @@ async function init() {
   // ---- water change ----
   let cleaning = 0; // amount of dirt still to remove (animated)
   onTap(document.getElementById('btn-water'), () => {
+    setEl.classList.remove('show');
     if (state.tank.dirt < 0.08) { showToast('水はきれいです'); return; }
     cleaning = Math.min(state.tank.dirt, 0.6);
     sound.waterChange();
@@ -349,7 +446,7 @@ async function init() {
     mateBtn.style.display = aliveFishes(state).length < PAIR && !fishes.some((f) => f.dead) ? '' : 'none';
     nurseryBtn.style.display = state.breed.clutch || state.breed.nursery ? '' : 'none';
     const ni = nurseryInfo(state);
-    nurseryBtn.textContent = ni.fry ? `稚魚水槽（${ni.fry}）` : '卵を見る';
+    nurseryBtn.textContent = ni.fry ? `🐟 稚魚水槽（${ni.fry}）` : '🥚 卵を見る';
   }
 
   // ---- welcome a companion (make a pair) ----
@@ -362,6 +459,7 @@ async function init() {
     showToast(`${name}がやってきました！`, 2200);
   }
   onTap(mateBtn, () => {
+    setEl.classList.remove('show');
     if (aliveFishes(state).length >= PAIR) return;
     const n = window.prompt('仲間のクマノミの名前をつけてください', 'クマノミ2');
     if (n === null) return;
@@ -470,7 +568,7 @@ async function init() {
       nyTank.style.display = 'none';
     }
   }
-  onTap(nurseryBtn, () => { nyOpen = true; renderNursery(); nyEl.classList.add('show'); });
+  onTap(nurseryBtn, () => { setEl.classList.remove('show'); nyOpen = true; renderNursery(); nyEl.classList.add('show'); });
   onTap(document.getElementById('ny-close'), () => { nyOpen = false; nyEl.classList.remove('show'); });
   onTap(document.getElementById('ny-feed'), () => {
     if (feedNursery(state)) { sound.plop(null); showToast('ワムシをあげました'); renderNursery(); saveState(state); }
@@ -502,8 +600,10 @@ async function init() {
     jName.textContent = sp.name;
     jNote.textContent = sp.note;
     jLightBtn.textContent = '照明：' + LIGHTS[jelly.lightKey].label;
+    jSound.textContent = SOUND_LABEL[sound.mode];
   }
   function enterJelly() {
+    sound.start();
     if (follow) setFollow(false);
     if (!jelly) {
       jelly = new JellyTank(renderer, Math.round(Q.particles * 0.8));
@@ -535,6 +635,8 @@ async function init() {
     menuEl.classList.add('show');
   }
   function enterReef() {
+    sound.start();
+    placeCamera();
     mode = 'reef';
     if (jelly) jelly.controls.enabled = false;
     controls.enabled = true;
@@ -565,7 +667,6 @@ async function init() {
   }
   onTap(document.getElementById('m-reef'), enterReef);
   onTap(document.getElementById('m-jelly'), enterJelly);
-  onTap(document.getElementById('btn-home'), showMenu);
   function exitJelly() { showMenu(); }
   function switchSpecies(step) {
     jelly.setSpecies(jelly.index + step);
@@ -589,6 +690,9 @@ async function init() {
   onTap(document.getElementById('j-prev'), () => switchSpecies(-1));
   onTap(document.getElementById('j-next'), () => switchSpecies(1));
   onTap(jLightBtn, () => { const l = jelly.nextLight(); renderJellyHud(); showToast('照明：' + l); });
+  const jSound = document.getElementById('j-sound');
+  const jSoundLabel = () => { jSound.textContent = SOUND_LABEL[sound.mode]; };
+  onTap(jSound, () => { sound.nextMode(); jSoundLabel(); soundLabel(); showToast(SOUND_LABEL[sound.mode]); });
   onTap(document.getElementById('j-view'), () => { setViewing(true); showToast('画面をタップすると戻ります', 1800); });
 
   updateHud();
@@ -693,7 +797,7 @@ async function init() {
     if (composer) composer.render(); else renderer.render(scene, camera);
   }
   loop();
-  window.__reef = { eggs, scene, camera, fishes, get fish() { return fishes[0]; }, food, controls, renderer, world, state };
+  window.__reef = { sound, eggs, scene, camera, fishes, get fish() { return fishes[0]; }, food, controls, renderer, world, state };
 }
 
 init().catch((err) => {

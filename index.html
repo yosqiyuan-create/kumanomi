@@ -62,7 +62,7 @@
   .meter .lbl { width: 3em; }
   .name .edit { font-size: 11px; opacity: .6; }
   .switch { display: none; margin-left: 6px; font-size: 11px; font-weight: 600; padding: 2px 7px; border-radius: 9px; background: rgba(160,225,255,.2); border: 1px solid rgba(160,225,255,.3); }
-  #btn-mate { background: rgba(200, 80, 140, .5); border-color: rgba(255,190,220,.45); }
+  #btn-mate { background: rgba(200, 80, 140, .4); }
   .days { font-size: 11px; opacity: .75; margin-top: 2px; }
   .msg { display: none; margin-top: 7px; font-size: 12px; color: #ffd36b; max-width: 170px; line-height: 1.4; }
   .btn { pointer-events: auto; appearance: none; border: 1px solid rgba(160,225,255,.25); color: #eaf8ff; font: inherit;
@@ -73,7 +73,7 @@
   .bottom { position: absolute; left: 0; right: 0; bottom: calc(18px + var(--safe-bottom)); display: flex; justify-content: center; gap: 10px; }
   #btn-water { background: rgba(20, 110, 210, .55); border-color: rgba(160,215,255,.45); }
   #btn-feed { background: rgba(230, 110, 30, .6); border-color: rgba(255,200,150,.45); }
-  #hint { position: fixed; left: 50%; bottom: calc(24px + var(--safe-bottom)); transform: translateX(-50%);
+  #hint { position: fixed; left: 50%; bottom: calc(100px + var(--safe-bottom)); transform: translateX(-50%);
     font-size: 13px; background: rgba(4,30,46,.55); padding: 8px 16px; border-radius: 16px; text-align: center; line-height: 1.6; white-space: nowrap;
     opacity: 0; transition: opacity .8s; pointer-events: none; }
   #hint.show { opacity: 1; }
@@ -91,7 +91,7 @@
   #death .d.small { font-size: 12px; opacity: .7; margin-top: 10px; }
   #btn-newfish { margin-top: 16px; font-size: 15px; font-weight: 700; padding: 12px 22px; border-radius: 26px;
     background: linear-gradient(180deg, rgba(255,150,60,.95), rgba(230,100,20,.95)); }
-  #btn-nursery { display: none; background: rgba(40, 160, 130, .55); border-color: rgba(170,255,225,.45); }
+  #btn-nursery { background: rgba(40, 160, 130, .45); }
   #nursery { position: fixed; inset: 0; z-index: 14; display: flex; align-items: center; justify-content: center;
     background: rgba(2, 12, 22, .45); opacity: 0; visibility: hidden; transition: opacity .4s, visibility .4s; }
   #nursery.show { opacity: 1; visibility: visible; }
@@ -137,6 +137,44 @@
   .m-stat { font-size: 12px; margin-top: 6px; color: #ffd36b; line-height: 1.4; }
   .m-stat.ok { color: #9fe8c0; }
   .m-foot { margin-top: auto; padding-top: 18px; font-size: 11px; opacity: .5; }
+  .gear { display: inline-block; margin-left: 4px; font-size: 13px; line-height: 1; padding: 3px 5px; border-radius: 9px;
+    background: rgba(160,225,255,.2); border: 1px solid rgba(160,225,255,.3); }
+  #settings { position: fixed; inset: 0; z-index: 16; display: flex; align-items: center; justify-content: center;
+    background: rgba(2, 12, 22, .5); opacity: 0; visibility: hidden; transition: opacity .3s, visibility .3s; }
+  #settings.show { opacity: 1; visibility: visible; }
+  #settings .panel { width: min(340px, 92vw); max-height: 88vh; overflow-y: auto; padding: 18px; border-radius: 18px;
+    background: rgba(8, 36, 56, .94); border: 1px solid rgba(170,220,255,.25); -webkit-user-select: text; user-select: text; }
+  #settings .t { font-size: 17px; font-weight: 700; text-align: center; margin-bottom: 6px; }
+  #settings .sec { font-size: 14px; font-weight: 700; margin: 14px 0 4px; color: #ffd36b; }
+  #settings .d { font-size: 12px; line-height: 1.6; opacity: .9; }
+  #settings .d.small { opacity: .65; margin-top: 6px; }
+  #settings .row { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin-top: 8px; }
+  #settings textarea { width: 100%; height: 64px; margin-top: 4px; border-radius: 10px; border: 1px solid rgba(170,220,255,.3);
+    background: rgba(0,0,0,.3); color: #eaf8ff; font-size: 11px; padding: 6px; resize: none; -webkit-user-select: text; user-select: text; touch-action: auto; }
+  .right.icons { gap: 6px; }
+  .ibtn { pointer-events: auto; appearance: none; width: 54px; padding: 5px 0 4px; border-radius: 14px; color: #eaf8ff; font: inherit;
+    display: flex; flex-direction: column; align-items: center; gap: 1px;
+    background: rgba(4, 30, 46, .45); border: 1px solid rgba(160,225,255,.22); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+  .ibtn span { font-size: 19px; line-height: 1.15; }
+  .ibtn small { font-size: 9px; opacity: .85; white-space: nowrap; }
+  .ibtn:active { transform: scale(.94); }
+  .ibtn.feed { background: rgba(230, 110, 30, .45); }
+  .ibtn.water { background: rgba(20, 110, 210, .45); }
+  #hud .card { padding: 7px 10px; }
+  #hud .card .name { font-size: 13px; }
+  #hud .meter { margin-top: 3px; gap: 5px; }
+  #hud .meter .lbl { width: 1.4em; font-size: 11px; }
+  #hud .track { width: 74px; height: 5px; }
+  .gear-btn { position: absolute; top: calc(12px + var(--safe-top)); right: 14px; width: 34px; height: 34px; border-radius: 50%;
+    font-size: 17px; line-height: 1; color: #eaf8ff; background: rgba(255,255,255,.14); border: 1px solid rgba(255,255,255,.35); }
+  .gear-btn.small { position: static; width: 34px; height: 34px; pointer-events: auto; background: rgba(4,30,46,.45); border-color: rgba(160,225,255,.3); }
+  .feed-btn { pointer-events: auto; position: absolute; right: 16px; bottom: calc(22px + var(--safe-bottom)); width: 64px; height: 64px; border-radius: 50%;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; color: #fff; font: inherit;
+    background: linear-gradient(180deg, rgba(255,150,60,.92), rgba(225,95,20,.92)); border: 1px solid rgba(255,220,180,.6); box-shadow: 0 6px 16px rgba(0,0,0,.3); }
+  .feed-btn span { font-size: 24px; line-height: 1.1; }
+  .feed-btn small { font-size: 10px; font-weight: 700; }
+  .feed-btn:active { transform: scale(.93); }
+  #settings .row .btn { font-size: 13px; }
   #toast.show { opacity: 1; transform: translate(-50%, -50%) scale(1); }
   #hint.hide { opacity: 0; }
 </style>
@@ -153,24 +191,16 @@
 <div id="hud">
   <div class="top">
     <div class="card">
-      <div class="name" style="pointer-events:auto"><span id="fish-name">クマノミ</span> <span class="edit">✎</span> <span id="fish-switch" class="switch">1/2 ▶</span></div>
+      <div class="name" style="pointer-events:auto"><span id="fish-name">クマノミ</span> <span id="fish-switch" class="switch">1/2 ▶</span></div>
       <div class="days" id="day-count">飼って1日目</div>
-      <div class="meter"><span class="lbl">おなか</span><div class="track"><div id="hunger-bar" class="bar"></div></div></div>
-      <div class="meter"><span class="lbl">元気</span><div class="track"><div id="health-bar" class="bar"></div></div></div>
-      <div class="meter"><span class="lbl">水</span><div class="track"><div id="water-bar" class="bar"></div></div></div>
+      <div class="meter"><span class="lbl">🦐</span><div class="track"><div id="hunger-bar" class="bar"></div></div></div>
+      <div class="meter"><span class="lbl">❤️</span><div class="track"><div id="health-bar" class="bar"></div></div></div>
+      <div class="meter"><span class="lbl">💧</span><div class="track"><div id="water-bar" class="bar"></div></div></div>
       <div class="msg" id="care-msg"></div>
     </div>
-    <div class="right">
-      <button class="btn home" id="btn-home">メイン画面</button>
-      <button class="btn" id="btn-quality">画質：標準</button>
-      <button class="btn" id="btn-camera">近くで見る</button>
-      <button class="btn" id="btn-sound">音：オン</button>
-      <button class="btn" id="btn-feed">エサをあげる</button>
-      <button class="btn" id="btn-water">水換え</button>
-      <button class="btn" id="btn-mate">仲間を迎える</button>
-      <button class="btn" id="btn-nursery">稚魚水槽</button>
-    </div>
+    <button class="gear-btn small" id="btn-back" aria-label="戻る">←</button>
   </div>
+  <button class="feed-btn" id="btn-feed"><span>🦐</span><small>エサ</small></button>
 </div>
 <div id="death">
   <div class="panel">
@@ -198,6 +228,7 @@
   </div>
 </div>
 <div id="menu">
+  <button class="gear-btn" id="btn-settings" aria-label="設定">⚙</button>
   <div class="m-head">
     <div class="m-title">俺の水族館</div>
     <div class="m-sub">見たい水槽を選んでください</div>
@@ -224,13 +255,43 @@
     <div class="right">
       <button class="btn home" id="j-back">メイン画面</button>
       <button class="btn" id="j-light">照明：青</button>
+      <button class="btn" id="j-sound">音：オン</button>
       <button class="btn" id="j-view">鑑賞モード</button>
     </div>
   </div>
   <div class="j-bottom"><button class="btn" id="j-prev">◀ 前の種類</button><button class="btn" id="j-next">次の種類 ▶</button></div>
 </div>
+<div id="settings">
+  <div class="panel">
+    <div class="t">設定</div>
+    <div id="set-tank">
+      <div class="sec">クマノミ水槽</div>
+      <div class="row">
+        <button class="btn" id="btn-water">💧 水換え</button>
+        <button class="btn" id="btn-mate">🐠 仲間を迎える</button>
+        <button class="btn" id="btn-nursery">🥚 卵</button>
+      </div>
+    </div>
+    <div class="sec">表示と音</div>
+    <div class="row"><button class="btn" id="btn-quality">画質：標準</button><button class="btn" id="btn-sound">音：オン</button></div>
+    <div class="d small">画質を変えると読み込み直します。カクカクするときは「軽量」に。</div>
+    <div class="sec">データのバックアップ</div>
+    <div class="d">育てているクマノミのデータ（名前・成長・卵や稚魚など）を保存します。ホーム画面のアイコンを消す前や、別の開き方をする前にどうぞ。</div>
+    <div class="row"><button class="btn" id="set-copy">コピーで保存</button><button class="btn" id="set-file">ファイルで保存</button></div>
+    <div class="d small" id="set-info"></div>
+    <div class="sec">データを戻す</div>
+    <textarea id="set-code" placeholder="ここにバックアップの文字を貼り付け"></textarea>
+    <div class="row"><button class="btn" id="set-restore">貼り付けたデータで戻す</button><button class="btn" id="set-load">ファイルから戻す</button></div>
+    <input type="file" id="set-file-in" accept=".txt,.json,text/plain,application/json" style="display:none">
+    <div class="sec">バージョンアップ</div>
+    <div class="d" id="ver-info">今のバージョン：</div>
+    <div class="row"><button class="btn" id="ver-check">新しいバージョンを確認</button><button class="btn" id="ver-update" style="display:none">更新する</button></div>
+    <div class="d small">GitUpでアップした直後は、反映まで数分かかることがあります。</div>
+    <div class="row"><button class="btn" id="set-close">閉じる</button></div>
+  </div>
+</div>
 <div id="toast">エサをあげました</div>
-<div id="hint">水の中をタップしてもエサが落ちます<br>指でなぞると見回せます</div>
+<div id="hint">2本の指で広げると近くで見られます<br>水の中をタップしてもエサが落ちます</div>
 
 <div id="splash">
   <div class="rays"><i></i><i></i><i></i></div>
@@ -238,7 +299,7 @@
     <img class="fish" src="icon-512.png" alt="">
     <h1>俺の水族館</h1>
     <div class="by">by Urushihara</div>
-    <div class="ver">Version 0.13.3</div>
+    <div class="ver">Version 0.16.1</div>
   </div>
   <div id="splash-status">準備しています…</div>
 </div>

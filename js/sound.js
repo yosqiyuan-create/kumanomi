@@ -26,6 +26,12 @@ export class AquariumSound {
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return;
     const ctx = this.ctx = new AC();
+    // iPhone: play a tiny silent sound inside the tap so audio is allowed from now on
+    try {
+      const b = ctx.createBuffer(1, 1, 22050);
+      const src = ctx.createBufferSource(); src.buffer = b; src.connect(ctx.destination); src.start(0);
+      ctx.resume();
+    } catch {}
     this.master = ctx.createGain();
     this.master.gain.value = 0;
     const comp = ctx.createDynamicsCompressor();
@@ -44,6 +50,7 @@ export class AquariumSound {
   resume() {
     if (!this.ctx || !this.enabled) return;
     if (this.ctx.state !== 'running') this.ctx.resume();
+    if (this.master && this.master.gain.value < 0.5) this.master.gain.setTargetAtTime(1.8, this.ctx.currentTime, 0.3);
   }
 
   suspend() {

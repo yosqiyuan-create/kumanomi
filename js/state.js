@@ -117,7 +117,11 @@ export function loadState() {
   return defaultState();
 }
 
+let frozen = false;   // set while restoring a backup, so nothing overwrites it
+export function freezeSaves() { frozen = true; }
+
 export function saveState(s) {
+  if (frozen) return;
   s.lastSeen = Date.now();
   try { localStorage.setItem(KEY, JSON.stringify(s)); } catch {}
 }
@@ -309,4 +313,38 @@ export function formatAway(sec) {
   if (sec < HOUR) return `${Math.round(sec / 60)}分ぶり`;
   if (sec < 24 * HOUR) return `${Math.round(sec / HOUR)}時間ぶり`;
   return `${Math.round(sec / (24 * HOUR))}日ぶり`;
+}
+
+// ---------- backup / restore ----------
+const CODE_HEAD = 'ORESUI1:';
+
+export function exportCode(s) {
+  const json = JSON.stringify({ ...s, lastSeen: Date.now() });
+  return CODE_HEAD + btoa(unescape(encodeURIComponent(json)));
+}
+
+// accepts a backup code or plain JSON; returns the state or null
+export function parseBackup(text) {
+  try {
+    text = (text || '').trim();
+    let json = text;
+    const i = text.indexOf(CODE_HEAD);
+    if (i >= 0) json = decodeURIComponent(escape(atob(text.slice(i + CODE_HEAD.length).replace(/\s+/g, ''))));
+    const s = JSON.parse(json);
+    if (!s || !s.tank || !(Array.isArray(s.fishes) || s.fish)) return null;
+    return s;
+  } catch { return null; }
+}
+
+// write a backup into storage; time while it was away does not count against the fish
+export function restoreBackup(s) {
+  s.lastSeen = Date.now();
+  frozen = true;
+  try { localStorage.setItem(KEY, JSON.stringify(s)); return true; } catch { return false; }
+}
+
+export function backupSummary(s) {
+  const list = s.fishes || (s.fish ? [s.fish] : []);
+  const names = list.filter((f) => f.alive !== false).map((f) => f.name).join('・') || '（いません）';
+  return `クマノミ：${names}`;
 }
