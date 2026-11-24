@@ -499,7 +499,29 @@ class Population {
     scene.add(this.lumpMesh);
     if (ac.block) {
       const bm = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, metalness: 0, emissive: new THREE.Color(ac.block.emissive || '#2a2418') });
-      this.blockMesh = new THREE.InstancedMesh(oralArmGeometry(ac.length, ac.block.color), bm, cfg.count * ac.count);
+      const bg = oralArmGeometry(ac.length, ac.block.color);
+      const nb = cfg.count * ac.count;
+      const aPh = new Float32Array(nb); for (let i = 0; i < nb; i++) aPh[i] = Math.random() * 6.283;
+      bg.setAttribute('aPhase', new THREE.InstancedBufferAttribute(aPh, 1));
+      this.blockPulse = new THREE.InstancedBufferAttribute(new Float32Array(nb), 1).setUsage(THREE.DynamicDrawUsage);
+      bg.setAttribute('aPulse', this.blockPulse);
+      // soft body: bend and ripple every vertex on the GPU so the arms flex like jelly, not like stone
+      const H = ac.length.toFixed(3), SB = (ac.block.soft ?? 1).toFixed(3);
+      bm.onBeforeCompile = (sh) => {
+        sh.uniforms.uTime = shared.uTime;
+        sh.vertexShader = 'attribute float aPhase; attribute float aPulse; uniform float uTime;\n' + sh.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
+          float sd = clamp(-position.y / ${H}, 0.0, 1.0);
+          float ph = uTime * 1.05 + aPhase;
+          float bend = sd * sd * ${SB};
+          transformed.x += bend * (0.16 * sin(ph - sd * 2.6) - 0.12 * aPulse);
+          transformed.z += bend * 0.14 * sin(ph * 0.83 + 1.7 - sd * 2.2);
+          transformed.y += 0.05 * sd * aPulse * ${SB};
+          float edge = smoothstep(0.05, 0.45, position.x);
+          transformed.x += ${SB} * edge * (0.03 * sin(uTime * 2.6 + position.y * 22.0 + aPhase) + 0.02 * sin(uTime * 3.7 + position.z * 30.0));
+          transformed.z += ${SB} * edge * 0.025 * sin(uTime * 2.2 + position.y * 18.0 + aPhase * 1.7);`);
+      };
+      bm.customProgramCacheKey = () => 'oralArmSoft' + H + SB;
+      this.blockMesh = new THREE.InstancedMesh(bg, bm, nb);
       this.blockMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
       this.blockMesh.frustumCulled = false;
       this.blockMesh.renderOrder = 2;
@@ -735,7 +757,7 @@ class Population {
       if (this.armMesh.instanceColor) this.armMesh.instanceColor.needsUpdate = true;
     }
     if (this.ribbons) this.ribbons.geometry.attributes.position.needsUpdate = true;
-    if (this.blockMesh) this.blockMesh.instanceMatrix.needsUpdate = true;
+    if (this.blockMesh) { this.blockMesh.instanceMatrix.needsUpdate = true; this.blockPulse.needsUpdate = true; }
     if (this.lumpMesh) { this.lumpMesh.instanceMatrix.needsUpdate = true; this.appMesh.geometry.attributes.position.needsUpdate = true; }
     if (this.clubMesh) this.clubMesh.instanceMatrix.needsUpdate = true;
   }
@@ -779,6 +801,7 @@ Population.prototype._updateMastigias = function (j, k, ang, ch, dt, t) {
     m.makeBasis(X, Y, Z).scale(sc.set(R * (1 - 0.14 * j.pulse + 0.05 * Math.sin(ph * 1.6)), R * (1 + 0.1 * j.pulse), R * (1 + 0.06 * Math.sin(ph * 1.1))))
       .setPosition(ch.p[0]);
     this.blockMesh.setMatrixAt(jIdx * ac.count + k, m);
+    this.blockPulse.array[jIdx * ac.count + k] = j.pulse;
     root = cp.copy(ch.p[ch.n - 1]).addScaledVector(X, R * 0.22);
   }
   // long flat appendage hanging from the end of the arm
