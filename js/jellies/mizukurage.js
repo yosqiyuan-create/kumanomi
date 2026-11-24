@@ -3,7 +3,7 @@ export default {
   id: 'mizukurage',
   name: 'ミズクラゲ',
   note: '4つの輪の模様が目印。ゆっくり拍動して漂う',
-  count: 14,
+  count: 16,
   size: [0.42, 0.62],          // bell radius range
   bell: { height: 0.5, flare: 1.04, color: '#d6ecff', opacity: 0.26, rim: 0.85, pattern: 'photo', texture: 'jelly-aurelia.jpg', patternColor: '#ffe2b8', lobes: 8, inner: 0.9 },
   pulse: { period: [1.5, 2.0], contract: 0.27, thrust: 0.34 },

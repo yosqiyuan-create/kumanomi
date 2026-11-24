@@ -13,7 +13,17 @@ export const LIGHTS = {
 
 const PREF = 'ore-no-suizokukan.jelly';
 const UP = new THREE.Vector3(0, 1, 0);
-const R_TANK = 2.6, Y_MIN = 0.7, Y_MAX = 5.6;
+// swim area; resized to what the camera sees so jellies fill the whole screen
+const B = { rx: 2.6, rz: 2.2, y0: 0.7, y1: 5.6 };
+function fitBounds(camera, targetY, dist) {
+  const halfH = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * dist;
+  const halfW = halfH * camera.aspect;
+  B.y0 = targetY - halfH * 1.12;
+  B.y1 = targetY + halfH * 0.9;
+  B.rx = Math.max(1.6, halfW * 1.05);
+  B.rz = 2.2;
+}
+const ell = (p) => Math.hypot(p.x / B.rx, p.z / B.rz);   // 1 = edge of the swim area
 
 // ---------- bell ----------
 function bellGeometry(height, flare) {
@@ -269,17 +279,17 @@ class Population {
         inner.renderOrder = 2;
         mesh.add(inner);
       }
-      const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * R_TANK * 0.85;
+      const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * 0.85;
       const j = {
         mesh, R, mat, inner,
-        pos: new THREE.Vector3(Math.cos(a) * r, rnd(Y_MIN + 0.5, Y_MAX - 0.5), Math.sin(a) * r),
+        pos: new THREE.Vector3(Math.cos(a) * r * B.rx, rnd(B.y0 + 0.3, B.y1 - 0.3), Math.sin(a) * r * B.rz),
         vel: new THREE.Vector3(),
         up: new THREE.Vector3(rnd(-0.3, 0.3), 1, rnd(-0.3, 0.3)).normalize(),
         wander: new THREE.Vector3(rnd(-1, 1), 0, rnd(-1, 1)),
         period: rnd(cfg.pulse.period[0], cfg.pulse.period[1]),
         phase: Math.random(),
         pulse: 0,
-        targetY: rnd(Y_MIN + 0.3, Y_MAX - 0.6),
+        targetY: rnd(B.y0 + 0.3, B.y1 - 0.6),
         retarget: rnd(5, 20),
       };
       mesh.position.copy(j.pos);
@@ -484,7 +494,7 @@ class Population {
       j.phase = (j.phase + dt / j.period) % 1;
       // each jelly drifts toward its own preferred depth: weak pulses let it sink, strong ones lift it
       j.retarget -= dt;
-      if (j.retarget < 0) { j.targetY = rnd(Y_MIN + 0.3, Y_MAX - 0.6); j.retarget = rnd(10, 25); }
+      if (j.retarget < 0) { j.targetY = rnd(B.y0 + 0.3, B.y1 - 0.6); j.retarget = rnd(10, 25); }
       const climb = THREE.MathUtils.clamp((j.targetY - j.pos.y) * 0.8 + 0.5, 0.15, 1.2);
       if (j.phase < prev) j.vel.addScaledVector(j.up, cfg.pulse.thrust * climb * (0.8 + 0.4 * Math.random()));
       const p = j.phase;
@@ -496,19 +506,21 @@ class Population {
       // gentle circular current + keep inside the tank
       const rr = Math.hypot(j.pos.x, j.pos.z);
       flow.set(-j.pos.z, 0, j.pos.x).multiplyScalar(0.045 / Math.max(0.6, rr));
+      if (j.pos.y < B.y0 + 0.2) j.vel.y += 0.3 * (B.y0 + 0.2 - j.pos.y);
       j.wander.x += (Math.random() - 0.5) * dt * 0.6; j.wander.z += (Math.random() - 0.5) * dt * 0.6;
       j.wander.clampLength(0, 1);
       d.set(j.wander.x * (cfg.tilt || 0.35), 1, j.wander.z * (cfg.tilt || 0.35));
-      if (rr > R_TANK * 0.75) { d.x -= j.pos.x / rr * 0.9; d.z -= j.pos.z / rr * 0.9; }
-      if (j.pos.y > Y_MAX - 0.3) d.y = 0.2;             // lean away near the top
-      if (j.pos.y < Y_MIN + 0.4) d.y = 1.6;
+      const e = ell(j.pos);
+      if (e > 0.8) { d.x -= j.pos.x / rr * 0.9 * (e - 0.6) * 2; d.z -= j.pos.z / rr * 0.9 * (e - 0.6) * 2; }
+      if (j.pos.y > B.y1 - 0.3) d.y = 0.2;             // lean away near the top
+      if (j.pos.y < B.y0 + 0.4) d.y = 1.6;
       d.normalize();
       j.up.lerp(d, Math.min(1, dt * 0.35)).normalize();
 
       j.vel.multiplyScalar(Math.exp(-dt * 1.4));
       j.vel.y -= cfg.sink * dt;
       j.pos.addScaledVector(j.vel, dt).addScaledVector(flow, dt);
-      if (j.pos.y < Y_MIN) j.pos.y = Y_MIN;
+      if (j.pos.y < B.y0) j.pos.y = B.y0;
       j.mesh.position.copy(j.pos);
       j.mesh.quaternion.setFromUnitVectors(UP, j.up);
       j.mesh.updateMatrixWorld();
@@ -700,6 +712,7 @@ export class JellyTank {
     this.index = Math.max(0, SPECIES.findIndex((s) => s.id === this.pref.species));
     this.pop = null;
     this.rim = new THREE.Color();
+    this.setSize(window.innerWidth, window.innerHeight);   // fit swim area before spawning
     this.setSpecies(this.index);
   }
 
@@ -745,10 +758,12 @@ export class JellyTank {
     this.camera.aspect = w / h;
     this.camera.fov = this.camera.aspect < 1 ? 62 : 50;
     this.camera.updateProjectionMatrix();
+    fitBounds(this.camera, 3.1, this.camera.aspect < 1 ? 8.2 : 7.2);
   }
 
   resetCamera() {
     const portrait = this.camera.aspect < 1;
+    fitBounds(this.camera, 3.1, portrait ? 8.2 : 7.2);
     this.controls.target.set(0, 3.1, 0);
     this.camera.position.set(0, 3.4, portrait ? 8.2 : 7.2);
     this.controls.update();
