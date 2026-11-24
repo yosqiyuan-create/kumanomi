@@ -3,6 +3,55 @@ import * as THREE from 'three';
 import { OrbitControls } from '../lib/addons/controls/OrbitControls.js';
 import { shared, makeParticles } from './env.js';
 import { SPECIES } from './jellies/index.js';
+import { mergeVertices } from '../lib/addons/utils/BufferGeometryUtils.js';
+
+// Mastigias oral arm: a solid, spongy, frilled block (two tiers) that widens downward and outward.
+// Local frame: y goes down from 0 to -H, +x points away from the jelly's centre. Units = bell radius.
+const hash3 = (x, y, z) => { const h = Math.sin(x * 127.1 + y * 311.7 + z * 74.7) * 43758.5453; return h - Math.floor(h); };
+function vnoise(x, y, z) {   // smooth 3D value noise, 0..1
+  const ix = Math.floor(x), iy = Math.floor(y), iz = Math.floor(z);
+  const fx = x - ix, fy = y - iy, fz = z - iz;
+  const u = fx * fx * (3 - 2 * fx), v = fy * fy * (3 - 2 * fy), w = fz * fz * (3 - 2 * fz);
+  const L = (a, b, t) => a + (b - a) * t;
+  const c = (dx, dy, dz) => hash3(ix + dx, iy + dy, iz + dz);
+  return L(L(L(c(0, 0, 0), c(1, 0, 0), u), L(c(0, 1, 0), c(1, 1, 0), u), v),
+           L(L(c(0, 0, 1), c(1, 0, 1), u), L(c(0, 1, 1), c(1, 1, 1), u), v), w);
+}
+function oralArmGeometry(H, color) {
+  let g = new THREE.BoxGeometry(1, 1, 1, 18, 44, 10);
+  g.deleteAttribute('normal'); g.deleteAttribute('uv');
+  g = mergeVertices(g);
+  const P = g.attributes.position, n = P.count;
+  const col = new Float32Array(n * 3), base = new THREE.Color(color), c = new THREE.Color();
+  const tier = (s) => 0.75 + 0.25 * Math.sin(Math.min(1, s / 0.55) * Math.PI) * (s < 0.55 ? 1 : 0)
+                      + (s >= 0.55 ? 0.8 + 0.25 * Math.sin((s - 0.55) / 0.45 * Math.PI) : 0);
+  for (let i = 0; i < n; i++) {
+    const bx = P.getX(i) + 0.5, by = P.getY(i), bz = P.getZ(i) * 2;
+    const s = 0.5 - by;                                   // 0 top .. 1 bottom
+    const out = (0.12 + 0.24 * s) * tier(s);              // outer edge, two frilly tiers
+    const xin = -0.04 + 0.03 * s;
+    // round off the box: pull corners in
+    const ex = Math.abs(bx * 2 - 1), ez = Math.abs(bz);
+    const round = 1 - 0.22 * ex * ex * ez * ez;
+    let x = xin + (out - xin) * bx;
+    let z = bz * (0.08 + 0.09 * s) * round * (0.75 + 0.25 * Math.sin(bx * Math.PI));
+    let y = -s * H;
+    if (s > 0.8) y -= (s - 0.8) / 0.2 * 0.16 * H * vnoise(x * 18, z * 18, 4.1);   // ragged, frilly lower edge
+    // spongy surface: many small bumps and pits
+    const sp = vnoise(x * 38, y * 38, z * 38) * 2 - 1;      // irregular sponge lumps
+    const bump = sp * 0.7 + (vnoise(x * 110, y * 110, z * 110) * 2 - 1) * 0.5;
+    const k = 0.02 * (0.4 + 0.6 * bx);                   // fine sponge, rougher on the outer side
+    // frilly, crinkled outer edge
+    const frill = Math.pow(bx, 3) * 0.06 * (vnoise(y * 14 + 3, z * 9, 1.7) * 2 - 1);
+    x += bump * k * bx + frill; z += bump * k * Math.sign(z || 1) + frill * 0.5; y += bump * k * 0.4;
+    P.setXYZ(i, x, y, z);
+    c.copy(base).multiplyScalar(0.62 + 0.5 * Math.max(0, bump * 0.5 + 0.5) * (Math.random() < 0.15 ? 0.55 : 1) + 0.08 * s);   // tiny pits read as sponge
+    col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
+  }
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  g.computeVertexNormals();
+  return g;
+}
 
 export const LIGHTS = {
   blue: { label: '青', top: '#0a3a8c', bot: '#010410', rim: '#86b8ff' },
@@ -448,9 +497,18 @@ class Population {
     }
     for (let i = this.tipBase; i < total; i++) this.lumpMesh.setColorAt(i, c.set(ac.apps.bulb));
     scene.add(this.lumpMesh);
+    if (ac.block) {
+      const bm = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, metalness: 0, emissive: new THREE.Color(ac.block.emissive || '#2a2418') });
+      this.blockMesh = new THREE.InstancedMesh(oralArmGeometry(ac.length, ac.block.color), bm, cfg.count * ac.count);
+      this.blockMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      this.blockMesh.frustumCulled = false;
+      this.blockMesh.renderOrder = 2;
+      scene.add(this.blockMesh);
+      this._bx = new THREE.Vector3(); this._by = new THREE.Vector3(); this._bz = new THREE.Vector3();
+    }
     // appendages: flat translucent straps
     const ap = ac.apps;
-    this.AROWS = 34; this.ACOLS = 5;
+    this.AROWS = 40; this.ACOLS = ap.cols || 5;
     const strips = cfg.count * ac.count;
     const vPer = this.AROWS * this.ACOLS;
     this.appPos = new Float32Array(strips * vPer * 3);
@@ -463,7 +521,7 @@ class Population {
       for (let k = 0; k < this.ACOLS; k++) {
         const u = Math.abs(k / (this.ACOLS - 1) * 2 - 1);
         const o = (st * vPer + r * this.ACOLS + k) * 4;
-        c.copy(body).multiplyScalar(0.85 + 0.25 * u).lerp(tip, tipK);
+        c.copy(body).multiplyScalar((ap.round ? 1.1 - 0.45 * u * u : 0.85 + 0.25 * u) * (ap.bumpy ? 0.8 + 0.4 * Math.random() : 1)).lerp(tip, tipK);   // round straps: lit centre, darker sides
         col[o] = c.r; col[o + 1] = c.g; col[o + 2] = c.b;
         col[o + 3] = (ap.opacity * (0.7 + 0.3 * u)) * (1 - 0.2 * f) + tipK * 0.25;
         if (r < this.AROWS - 1 && k < this.ACOLS - 1) {
@@ -522,6 +580,7 @@ class Population {
     if (this.armMesh) { scene.remove(this.armMesh); this.armMesh.dispose(); }
     if (this.ribbons) { scene.remove(this.ribbons); this.ribbons.geometry.dispose(); this.ribMat.dispose(); }
     if (this.lumpMesh) { scene.remove(this.lumpMesh); this.lumpMesh.dispose(); }
+    if (this.blockMesh) { scene.remove(this.blockMesh); this.blockMesh.geometry.dispose(); this.blockMesh.dispose(); }
     if (this.appMesh) { scene.remove(this.appMesh); this.appMesh.geometry.dispose(); this.appMat.dispose(); }
     if (this.clubMesh) { scene.remove(this.clubMesh); this.clubMesh.dispose(); }
   }
@@ -676,6 +735,7 @@ class Population {
       if (this.armMesh.instanceColor) this.armMesh.instanceColor.needsUpdate = true;
     }
     if (this.ribbons) this.ribbons.geometry.attributes.position.needsUpdate = true;
+    if (this.blockMesh) this.blockMesh.instanceMatrix.needsUpdate = true;
     if (this.lumpMesh) { this.lumpMesh.instanceMatrix.needsUpdate = true; this.appMesh.geometry.attributes.position.needsUpdate = true; }
     if (this.clubMesh) this.clubMesh.instanceMatrix.needsUpdate = true;
   }
@@ -704,10 +764,21 @@ Population.prototype._updateMastigias = function (j, k, ang, ch, dt, t) {
     m.compose(cp, q.identity(), sc.set(sz, sz, sz));
     this.lumpMesh.setMatrixAt(base + i, m);
   }
+  let root = ch.p[ch.n - 1];
+  if (this.blockMesh) {
+    const X = this._bx, Y = this._by, Z = this._bz;
+    // hang along the bell axis, leaning a little with the arm's sway
+    Y.subVectors(ch.p[0], ch.p[ch.n - 1]).normalize().multiplyScalar(0.35).addScaledVector(j.up, 0.65).normalize();
+    X.copy(rad).addScaledVector(Y, -rad.dot(Y)).normalize();
+    Z.crossVectors(X, Y);
+    m.makeBasis(X, Y, Z).scale(sc.set(R, R, R)).setPosition(ch.p[0]);
+    this.blockMesh.setMatrixAt(jIdx * ac.count + k, m);
+    root = cp.copy(ch.p[ch.n - 1]).addScaledVector(X, R * 0.22);
+  }
   // long flat appendage hanging from the end of the arm
   const app = j.apps[k];
   const rest = this._v.copy(j.up).multiplyScalar(-1).addScaledVector(rad, 0.12).normalize();
-  app.update(ch.p[ch.n - 1], dt, 0.25, 0.9, this._flow, rest, 1.4);
+  app.update(root, dt, 0.25, 0.9, this._flow, rest, ap.stiff ?? 1.4);
   const P = this.appPos, AR = this.AROWS, AC = this.ACOLS;
   const o0 = (jIdx * ac.count + k) * AR * AC * 3;
   const len = ap.length;
@@ -717,11 +788,18 @@ Population.prototype._updateMastigias = function (j, k, ang, ch, dt, t) {
     t1.copy(rad).addScaledVector(d, -rad.dot(d)).normalize();
     t2.crossVectors(d, t1).normalize();
     const tipRound = f > 0.9 ? Math.sqrt(Math.max(0, 1 - (f - 0.9) / 0.1)) : 1;
-    const w = R * ap.width * (0.75 + 0.35 * Math.sin(Math.min(1, f * 1.4) * Math.PI * 0.9)) * tipRound;
-    const sway = R * 0.05 * Math.sin(f * 4 + t * 0.7 + k * 1.3) * f;
+    let w = R * ap.width * (0.75 + 0.35 * Math.sin(Math.min(1, f * 1.4) * Math.PI * 0.9)) * tipRound;
+    if (ap.taper) w = R * ap.width * (1 - ap.taper * f) * (f > 0.82 ? Math.pow(Math.max(0, 1 - (f - 0.82) / 0.18), 0.6) : 1);
+    let sway = R * 0.05 * Math.sin(f * 4 + t * 0.7 + k * 1.3) * f;
+    let sway2 = 0;
+    if (ap.wave) {   // a wave runs from the root to the tip, so the strap ripples and streams like a ribbon in water
+      const ph = f * ap.wave.len - t * ap.wave.speed + k * 1.7 + jIdx;
+      sway = R * ap.wave.amp * f * Math.sin(ph);
+      sway2 = R * ap.wave.amp * 0.4 * f * Math.sin(ph * 0.8 + 1.3);
+    }
     for (let c = 0; c < AC; c++) {
       const u = c / (AC - 1) * 2 - 1;
-      const wave = Math.abs(u) * w * 0.25 * Math.sin(f * len * 34 + t * 1.2 + k);   // wavy edges
+      const wave = (ap.round ? (1 - u * u) * w * ap.round : Math.abs(u) * w * 0.25 * Math.sin(f * len * 34 + t * 1.2 + k)) + sway2;   // wavy edges / rounded body
       const o = o0 + (r * AC + c) * 3;
       P[o] = cp.x + t1.x * (u * w + sway) + t2.x * wave;
       P[o + 1] = cp.y + t1.y * (u * w + sway) + t2.y * wave;

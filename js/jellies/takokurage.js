@@ -1,6 +1,6 @@
-// タコクラゲ — remade from the user's sample video:
-// glowing blue dome covered in small white dots, a big white cauliflower-like mass of oral arms,
-// and thin clear-blue strings with white club tips trailing behind.
+// タコクラゲ — from the user's sample video and photos:
+// blue dome covered in small white dots; under it a stout pillar that splits into solid, spongy,
+// frilled oral-arm blocks (the key feature); thick finger-like appendages stream from their ends.
 export default {
   id: 'takokurage',
   name: 'タコクラゲ',
@@ -12,10 +12,13 @@ export default {
   sink: 0.07,
   tentacles: null,
   arms: {
-    count: 8, segments: 6, length: 1.3, style: 'mastigias', rootR: 0.22, splay: 0.6, lumpDetail: 1, clusterBias: 0.9,
-    lump: 0.24, lumpsPerSeg: 34, lumpSize: 0.04, clusters: 16, clusterSpread: 0.6,
-    lumpColors: ['#f7f4ec', '#e6d8b8', '#bcd0f0', '#8ea6d4'], lumpOdds: [0.5, 0.25, 0.15, 0.1], emissive: '#46527a',
-    apps: { segments: 10, length: 1.7, width: 0.03, color: '#86aef0', tip: '#cfe0ff', opacity: 0.32, bulb: '#f4f6ff', bulbSize: 0.075 },
+    count: 8, segments: 6, length: 1.0, style: 'mastigias', rootR: 0.1, splay: 0.1, lumpDetail: 1, clusterBias: 0.9,
+    block: { color: '#fff4dc', emissive: '#7a6e52' },   // solid spongy frilled oral arms (the key feature)
+    lump: 0.24, lumpsPerSeg: 6, lumpSize: 0.03, clusters: 10, clusterSpread: 0.5,
+    lumpColors: ['#f7f0de', '#e6d8b8'], lumpOdds: [0.6, 0.4], emissive: '#6a604a',
+    // long appendages: thick, bumpy finger-like straps that stream and ripple behind (from the user's photos)
+    apps: { segments: 10, length: 1.5, width: 0.12, taper: 0.35, round: 0.45, bumpy: true, color: '#e9e0c8', tip: '#f4efe0', opacity: 0.85,
+      cols: 7, stiff: 0.9, wave: { amp: 0.07, len: 2.6, speed: 1.3 } },
   },
   lights: ['blue', 'white', 'purple', 'rainbow'],
 };
