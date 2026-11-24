@@ -60,7 +60,7 @@ void main(){
 }`;
 
 const BELL_FS = /* glsl */`
-uniform vec3 uColor; uniform vec3 uPat; uniform vec3 uRim; uniform float uOpacity; uniform float uRimStr; uniform int uPattern; uniform float uPulse; uniform sampler2D uTex;
+uniform vec3 uColor; uniform vec3 uPat; uniform vec3 uRim; uniform float uOpacity; uniform float uRimStr; uniform int uPattern; uniform float uPulse; uniform sampler2D uTex; uniform float uVar;
 varying vec3 vN; varying vec3 vView; varying vec3 vLocal; varying float vT;
 #include <common>
 #include <fog_pars_fragment>
@@ -107,6 +107,38 @@ void main(){
     col = uColor * (0.35 + 1.1 * lum);
     col = mix(col, uPat * (0.6 + 0.6 * lum), gon * 0.55);
     a = uOpacity * 0.3 + pow(lum, 1.5) * 0.95;
+  } else if (uPattern == 5) {     // photo strip wrapped around the bell (Mastigias)
+    float ang = atan(q.y, q.x);
+    vec2 uvp = vec2((ang / 6.28318 + 0.5) * 2.0, clamp((vT - 0.12) / 0.84, 0.0, 1.0));
+    vec3 tc = texture2D(uTex, uvp).rgb;
+    float lum = dot(tc, vec3(0.333));
+    float och = clamp((tc.r - tc.b) * 3.0, 0.0, 1.0);
+    col = pow(tc, vec3(0.85)) * 1.45;
+    col = mix(col, col * vec3(0.55, 0.38, 0.26), uVar);                 // brown individuals
+    float apex = 1.0 - smoothstep(0.06, 0.26, vT);                  // plain clear jelly at the very top
+    col = mix(col, vec3(0.80, 0.87, 0.93) * mix(1.0, 0.5, uVar), apex);
+    lum = mix(lum, 0.3, apex); och *= 1.0 - apex;
+    float spot = smoothstep(0.35, 0.6, lum);
+    col = mix(col, vec3(0.97, 0.98, 0.95), spot * 0.5);
+    a = 0.3 + spot * 0.7 + och * 0.55 + uVar * 0.35;
+  } else if (uPattern == 4) {     // Mastigias papua: clear top, ochre band below, rows of white spots
+    float ang = atan(q.y, q.x);
+    float band = smoothstep(0.4, 0.55, vT) * (1.0 - smoothstep(0.9, 0.98, vT));
+    vec3 top = mix(vec3(0.78, 0.86, 0.93), vec3(0.42, 0.27, 0.15), uVar);
+    vec3 ochre = mix(vec3(0.66, 0.42, 0.16), vec3(0.34, 0.20, 0.09), uVar);
+    col = mix(top, ochre, band);
+    a = mix(uOpacity, 0.78, band) + uVar * 0.45;
+    float rf = vT * 11.0; float ri = floor(rf); float rv = fract(rf);
+    float n = 4.0 + ri * 3.4;
+    float cf = (ang / 6.28318 + 0.5) * n + ri * 0.37;
+    float cu = fract(cf);
+    float elong = 1.0 + smoothstep(5.0, 10.0, ri) * 1.3;          // longer spots toward the margin
+    vec2 dd = vec2(cu - 0.5, (rv - 0.5) / elong);
+    float h = fract(sin(dot(vec2(floor(cf), ri), vec2(12.9898, 78.233))) * 43758.5453);
+    float rad = 0.3 * (0.7 + 0.35 * h);
+    float keep = mix(0.45, 0.1, smoothstep(2.0, 6.0, ri));          // sparser, bigger spots on the clear top
+    float spot = smoothstep(rad, rad * 0.72, length(dd)) * step(keep, h) * step(0.5, ri);
+    col = mix(col, uPat, spot); a = mix(a, 0.97, spot);
   } else if (uPattern == 2) {     // Mastigias: white spots
     vec3 sp = vLocal * 6.0;
     vec3 cell = floor(sp); vec3 f = fract(sp) - 0.5;
@@ -179,10 +211,12 @@ class Chain {
 
 const rnd = (a, b) => a + Math.random() * (b - a);
 const texCache = {};
-function loadTex(url) {
+function loadTex(url, srgb = false) {
   if (!texCache[url]) {
     const t = new THREE.TextureLoader().load(url);
-    t.colorSpace = THREE.NoColorSpace;
+    t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;   // real photo colours need sRGB
+    if (srgb) { t.generateMipmaps = false; t.minFilter = THREE.LinearFilter; }   // no seam line where the strip wraps
+    t.wrapS = THREE.MirroredRepeatWrapping;
     t.anisotropy = 4;
     texCache[url] = t;
   }
@@ -204,7 +238,8 @@ class Population {
         uTime: { value: 0 }, uPulse: { value: 0 }, uPhase: { value: 0 }, uContract: { value: cfg.pulse.contract }, uLobes: { value: cfg.bell.lobes || 0 },
         uColor: { value: new THREE.Color(bc.color) }, uPat: { value: new THREE.Color(bc.patternColor) },
         uRim: { value: rimColor.clone() }, uOpacity: { value: bc.opacity }, uRimStr: { value: bc.rim },
-        uPattern: { value: bc.pattern === 'rings' ? 1 : bc.pattern === 'spots' ? 2 : bc.pattern === 'photo' ? 3 : 0 },
+        uPattern: { value: { rings: 1, spots: 2, photo: 3, mastigias: 4, photoStrip: 5 }[bc.pattern] || 0 },
+        uVar: { value: 0 },
         uTex: { value: null },
       }]),
     });
@@ -213,7 +248,8 @@ class Population {
       const R = rnd(cfg.size[0], cfg.size[1]);
       const mat = baseMat.clone();
       mat.uniforms.uTime = shared.uTime;
-      if (bc.texture) mat.uniforms.uTex.value = loadTex(bc.texture);
+      if (bc.texture) mat.uniforms.uTex.value = loadTex(bc.texture, bc.pattern === 'photoStrip');
+      if (bc.brownChance) mat.uniforms.uVar.value = Math.random() < bc.brownChance ? 1 : 0;
       mat.uniforms.uRim.value = rimColor.clone();
       const mesh = new THREE.Mesh(geo, mat);
       mesh.renderOrder = 3;
@@ -257,7 +293,9 @@ class Population {
       // oral arms from under the bell
       j.arms = [];
       const ac = cfg.arms;
-      for (let k = 0; k < ac.count; k++) j.arms.push(new Chain(ac.segments, ac.length * R / ac.segments * (ac.style === 'ribbon' ? 1.0 : 1.7), j.pos));
+      for (let k = 0; k < ac.count; k++) j.arms.push(new Chain(ac.segments, ac.length * R / ac.segments * (ac.style === 'beads' ? 1.7 : 1.0), j.pos));
+      j.apps = [];
+      if (ac.apps) for (let k = 0; k < ac.count; k++) j.apps.push(new Chain(ac.apps.segments, ac.apps.length * R / ac.apps.segments, j.pos));
       this.jellies.push(j);
     }
 
@@ -290,6 +328,7 @@ class Population {
     // oral arms
     const ac = cfg.arms;
     if (ac.style === 'ribbon') this._buildRibbons(scene);
+    else if (ac.style === 'mastigias') this._buildMastigias(scene);
     else this._buildBeads(scene);
     this._m = new THREE.Matrix4(); this._q = new THREE.Quaternion(); this._s = new THREE.Vector3();
     this._v = new THREE.Vector3(); this._d = new THREE.Vector3(); this._flow = new THREE.Vector3();
@@ -339,6 +378,59 @@ class Population {
     this._cp = new THREE.Vector3(); this._cq = new THREE.Vector3();
   }
 
+  // Mastigias: a fluffy, cauliflower-like mass of oral arms + long flat appendages with pale tips
+  _buildMastigias(scene) {
+    const cfg = this.cfg, ac = cfg.arms;
+    const per = (ac.segments - 1) * ac.lumpsPerSeg;
+    const total = cfg.count * ac.count * per;
+    const mat = new THREE.MeshStandardMaterial({ roughness: 0.6, emissive: new THREE.Color('#6a4518') });
+    this.lumpMesh = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 0), mat, total);
+    this.lumpMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.lumpMesh.frustumCulled = false;
+    const ochre = new THREE.Color('#dcae68'), white = new THREE.Color('#f3efe2'), dark = new THREE.Color('#3b3328'), c = new THREE.Color();
+    this.lumps = [];
+    for (let i = 0; i < total; i++) {
+      const r = Math.random();
+      c.copy(r < 0.2 ? white : r < 0.24 ? dark : ochre).multiplyScalar(0.9 + Math.random() * 0.3);
+      this.lumpMesh.setColorAt(i, c);
+      this.lumps.push({ a: Math.random() * Math.PI * 2, rr: 0.55 + Math.random() * 0.55, s: (r < 0.2 ? 0.45 : 1) * (0.7 + Math.random() * 0.6), fo: Math.random() });
+    }
+    scene.add(this.lumpMesh);
+    // appendages: flat translucent straps
+    const ap = ac.apps;
+    this.AROWS = 34; this.ACOLS = 5;
+    const strips = cfg.count * ac.count;
+    const vPer = this.AROWS * this.ACOLS;
+    this.appPos = new Float32Array(strips * vPer * 3);
+    const col = new Float32Array(strips * vPer * 4);
+    const idx = [];
+    const body = new THREE.Color(ap.color), tip = new THREE.Color(ap.tip);
+    for (let st = 0; st < strips; st++) for (let r = 0; r < this.AROWS; r++) {
+      const f = r / (this.AROWS - 1);
+      const tipK = THREE.MathUtils.smoothstep(f, 0.86, 0.96);
+      for (let k = 0; k < this.ACOLS; k++) {
+        const u = Math.abs(k / (this.ACOLS - 1) * 2 - 1);
+        const o = (st * vPer + r * this.ACOLS + k) * 4;
+        c.copy(body).multiplyScalar(0.85 + 0.25 * u).lerp(tip, tipK);
+        col[o] = c.r; col[o + 1] = c.g; col[o + 2] = c.b;
+        col[o + 3] = (ap.opacity * (0.7 + 0.3 * u)) * (1 - 0.2 * f) + tipK * 0.25;
+        if (r < this.AROWS - 1 && k < this.ACOLS - 1) {
+          const i0 = st * vPer + r * this.ACOLS + k;
+          idx.push(i0, i0 + this.ACOLS, i0 + 1, i0 + 1, i0 + this.ACOLS, i0 + this.ACOLS + 1);
+        }
+      }
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(this.appPos, 3).setUsage(THREE.DynamicDrawUsage));
+    g.setAttribute('color', new THREE.BufferAttribute(col, 4));
+    g.setIndex(idx);
+    this.appMat = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, side: THREE.DoubleSide, depthWrite: false, fog: true });
+    this.appMesh = new THREE.Mesh(g, this.appMat);
+    this.appMesh.frustumCulled = false;
+    this.appMesh.renderOrder = 1;
+    scene.add(this.appMesh);
+  }
+
   _buildBeads(scene) {
     const cfg = this.cfg, ac = cfg.arms;
     const beads = cfg.count * ac.count * (ac.segments - 1);
@@ -377,6 +469,8 @@ class Population {
     if (this.lines) { scene.remove(this.lines); this.lines.geometry.dispose(); this.lineMat.dispose(); }
     if (this.armMesh) { scene.remove(this.armMesh); this.armMesh.dispose(); }
     if (this.ribbons) { scene.remove(this.ribbons); this.ribbons.geometry.dispose(); this.ribMat.dispose(); }
+    if (this.lumpMesh) { scene.remove(this.lumpMesh); this.lumpMesh.dispose(); }
+    if (this.appMesh) { scene.remove(this.appMesh); this.appMesh.geometry.dispose(); this.appMat.dispose(); }
     if (this.clubMesh) { scene.remove(this.clubMesh); this.clubMesh.dispose(); }
   }
 
@@ -445,7 +539,12 @@ class Population {
           this._rad.set(Math.cos(ang), 0, Math.sin(ang)).applyQuaternion(j.mesh.quaternion);
           const rest = this._t2.copy(j.up).multiplyScalar(-1).addScaledVector(this._rad, 0.22).normalize();
           ch.update(v, dt, 0.3, 0.86, flow, rest, 2.2);
+        } else if (this.lumpMesh) {
+          this._rad.set(Math.cos(ang), 0, Math.sin(ang)).applyQuaternion(j.mesh.quaternion);
+          const rest = this._t2.copy(j.up).multiplyScalar(-1).addScaledVector(this._rad, 0.18).normalize();
+          ch.update(v, dt, 0.3, 0.85, flow, rest, 3.0);
         } else ch.update(v, dt, 0.5, 0.9, flow);
+        if (this.lumpMesh) { this._updateMastigias(j, k, ang, ch, dt, t); continue; }
         if (this.ribbons) {
           const rad = this._rad.set(Math.cos(ang), 0, Math.sin(ang)).applyQuaternion(j.mesh.quaternion);
           const P = this.ribPos, ROWS = this.ROWS, COLS = this.COLS;
@@ -505,9 +604,59 @@ class Population {
       if (this.armMesh.instanceColor) this.armMesh.instanceColor.needsUpdate = true;
     }
     if (this.ribbons) this.ribbons.geometry.attributes.position.needsUpdate = true;
+    if (this.lumpMesh) { this.lumpMesh.instanceMatrix.needsUpdate = true; this.appMesh.geometry.attributes.position.needsUpdate = true; }
     if (this.clubMesh) this.clubMesh.instanceMatrix.needsUpdate = true;
   }
 }
+
+// Mastigias per-arm update (kept outside the main loop for clarity)
+Population.prototype._updateMastigias = function (j, k, ang, ch, dt, t) {
+  const cfg = this.cfg, ac = cfg.arms, ap = ac.apps, R = j.R;
+  const m = this._m, q = this._q, sc = this._s, cp = this._cp || (this._cp = new THREE.Vector3()), d = this._d;
+  const rad = this._rad.set(Math.cos(ang), 0, Math.sin(ang)).applyQuaternion(j.mesh.quaternion);
+  const jIdx = this.jellies.indexOf(j);
+  // fluffy lumps around the oral arm
+  const per = (ac.segments - 1) * ac.lumpsPerSeg;
+  const base = (jIdx * ac.count + k) * per;
+  const t1 = this._t1, t2 = this._t2;
+  for (let i = 0; i < per; i++) {
+    const L = this.lumps[base + i];
+    const f = Math.min(1, (Math.floor(i / ac.lumpsPerSeg) + L.fo) / (ac.segments - 1));
+    ch.sample(f, cp, d);
+    t1.copy(rad).addScaledVector(d, -rad.dot(d)).normalize();
+    t2.crossVectors(d, t1).normalize();
+    const thick = R * ac.lump * (1 - 0.35 * f);
+    const a = L.a + Math.sin(t * 0.8 + i) * 0.1;
+    cp.addScaledVector(t1, Math.cos(a) * thick * L.rr).addScaledVector(t2, Math.sin(a) * thick * L.rr);
+    const sz = R * 0.036 * L.s * (1 - 0.25 * f);
+    m.compose(cp, q.identity(), sc.set(sz, sz, sz));
+    this.lumpMesh.setMatrixAt(base + i, m);
+  }
+  // long flat appendage hanging from the end of the arm
+  const app = j.apps[k];
+  const rest = this._v.copy(j.up).multiplyScalar(-1).addScaledVector(rad, 0.12).normalize();
+  app.update(ch.p[ch.n - 1], dt, 0.25, 0.9, this._flow, rest, 1.4);
+  const P = this.appPos, AR = this.AROWS, AC = this.ACOLS;
+  const o0 = (jIdx * ac.count + k) * AR * AC * 3;
+  const len = ap.length;
+  for (let r = 0; r < AR; r++) {
+    const f = r / (AR - 1);
+    app.sample(f, cp, d);
+    t1.copy(rad).addScaledVector(d, -rad.dot(d)).normalize();
+    t2.crossVectors(d, t1).normalize();
+    const tipRound = f > 0.9 ? Math.sqrt(Math.max(0, 1 - (f - 0.9) / 0.1)) : 1;
+    const w = R * ap.width * (0.75 + 0.35 * Math.sin(Math.min(1, f * 1.4) * Math.PI * 0.9)) * tipRound;
+    const sway = R * 0.05 * Math.sin(f * 4 + t * 0.7 + k * 1.3) * f;
+    for (let c = 0; c < AC; c++) {
+      const u = c / (AC - 1) * 2 - 1;
+      const wave = Math.abs(u) * w * 0.25 * Math.sin(f * len * 34 + t * 1.2 + k);   // wavy edges
+      const o = o0 + (r * AC + c) * 3;
+      P[o] = cp.x + t1.x * (u * w + sway) + t2.x * wave;
+      P[o + 1] = cp.y + t1.y * (u * w + sway) + t2.y * wave;
+      P[o + 2] = cp.z + t1.z * (u * w + sway) + t2.z * wave;
+    }
+  }
+};
 
 // ---------- tank ----------
 export class JellyTank {
